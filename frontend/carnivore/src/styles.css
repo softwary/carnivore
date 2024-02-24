@@ -1,1 +1,6 @@
 /* You can add global styles to this file, and also import other style files */
+
+.app-container {
+    background-color: #240529;
+    /* Dark Purple Color */
+}

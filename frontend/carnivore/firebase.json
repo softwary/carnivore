@@ -1,0 +1,12 @@
+{
+  "hosting": [
+    {
+      "target": "carnivore",
+      "source": ".",
+      "frameworksBackend": {}
+    }
+  ],
+  "database": {
+    "rules": "database.rules.json"
+  }
+}
