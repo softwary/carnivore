@@ -1,5 +1,31 @@
-
+<!-- 
 <div>
   <h1>Play Cannibaletters</h1>
   <app-login></app-login>
+  <button (click)="startGame()">Start Game</button>
+
 </div>
+<router-outlet /> -->
+<header>
+  <link
+    rel="stylesheet"
+    href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"
+  />
+</header>
+<nav> 
+  <app-login (loginStatusChanged)="updateLoginStatus($event)"></app-login>
+</nav>
+
+
+<div class="container">
+  <h1 class="center-align">Play Cannibaletters</h1>
+ 
+  <button class="btn waves-effect waves-light" (click)="startGame()">
+    Start Game
+  </button>
+</div>
+
+<footer>&copy; 2024 Cannibaletters</footer>
+
+<router-outlet />
+

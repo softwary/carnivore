@@ -1,11 +1,12 @@
 <div *ngIf="!(isLoggedIn$ | async); else loggedInTemplate">
-  <button (click)="onLoginAnonymously()">Login Anonymously</button>
-  <button (click)="onLoginWithGoogle()">Login with Google</button>
+  <button class="btn waves-effect waves-light" (click)="onLoginAnonymously()">Login Anonymously</button>
+  <button class="btn waves-effect waves-light" (click)="onLoginWithGoogle()">Login with Google</button>
   <!-- Other login UI elements -->
 </div>
 
 <ng-template #loggedInTemplate>
   <!-- Content to display when user is logged in -->
-  <button (click)="onLogout()">Logout</button>
+  <button  class="btn waves-effect waves-light" (click)="onLogout()">Logout</button>
   <!-- You can add more user-specific information here -->
 </ng-template>
+

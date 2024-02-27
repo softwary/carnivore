@@ -64,4 +64,20 @@ export class AuthenticationService {
   get currentUser() {
     return this.currentUserSubject.asObservable();
   }
+
+  async getIdToken(): Promise<string | null> {
+    const auth = getAuth();
+    return new Promise((resolve) => {
+      onAuthStateChanged(auth, (user) => {
+        if (user) {
+          user.getIdToken().then((idToken) => {
+            resolve(idToken);
+          });
+        } else {
+          resolve(null);
+        }
+      });
+    });
+  }
+  
 }
