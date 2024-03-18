@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, HostListener, OnInit } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { NgIf, NgFor } from '@angular/common';
 import { GameService } from '../services/game.service';
@@ -8,7 +8,10 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { TileComponent } from '../tile/tile.component';
 import { MatInputModule } from '@angular/material/input';
-import { AlphaOnlyDirective } from '../alpha-only.directive'; 
+import { AlphaOnlyDirective } from '../alpha-only.directive';
+import { MatGridListModule } from '@angular/material/grid-list';
+import { MatIconModule } from '@angular/material/icon';
+import { WebSocketMessage } from '../models/web-socket-message';
 
 @Component({
   standalone: true,
@@ -20,7 +23,10 @@ import { AlphaOnlyDirective } from '../alpha-only.directive';
     MatCardModule,
     MatButtonModule,
     MatInputModule,
-    AlphaOnlyDirective
+    AlphaOnlyDirective,
+    MatGridListModule,
+    MatButtonModule,
+    MatIconModule,
   ],
   selector: 'app-game-board',
   templateUrl: './game-board.component.html',
@@ -37,7 +43,15 @@ export class GameBoardComponent {
     private gameService: GameService,
     private webSocketService: WebSocketService
   ) {}
-
+  @HostListener('window:keydown', ['$event'])
+  handleKeyDown(event: KeyboardEvent) {
+    if (event.ctrlKey || event.metaKey) {
+      // Check for Command/Ctrl
+      if (event.key === 'Enter') {
+        this.flipRandomTile(); // Implement this function to handle the flip
+      }
+    }
+  }
   ngOnInit() {
     // console.log("@ in game-board, game = ", this.game)
     this.gameService.getGame().subscribe((gameState: Game | null) => {
@@ -47,43 +61,47 @@ export class GameBoardComponent {
         // console.log("@ gameState.Tiles= ", gameState.tiles);
         this.tiles = gameState.tiles;
         this.gameId = gameState.gameId;
-        console.log('@ game-board gameId= ', this.gameId);
-        console.log('@ in gameboard, what are tiles? ', this.tiles);
-        // this.tiles.forEach(tile => {
-        //     console.log(tile.tileId);
-        // })
+        console.log('@ game-board gameState= ', this.game);
       }
       // Update component view based on the new game state
     });
   }
 
   submitWord() {
-    // Construct the message object
-    const message = {
-      type: 'submitWord',
-      data: {
-        word: this.currentWord,
-      },
-      // Include any other relevant information, like playerId or gameId
+    const type = 'submitWord';
+    const data = {
+      word: this.currentWord
     };
+    // Include any other relevant information, like playerId or gameId
 
+    const submitWordMessage = new WebSocketMessage(type, '', data);
     // Send the message via WebSocket
-    this.webSocketService.sendMessage(message);
+    this.webSocketService.sendMessage(submitWordMessage);
 
     // Clear the input field
     this.currentWord = '';
   }
 
-  handleTileFlipped(tileId: number) {
-    console.log('@ made it to handletileFlipped!, tileId= ', tileId);
-    // Send a message to the backend to flip the tile
-    console.log('@ handleTileFlipped gameId= ', this.gameId);
-    let type = 'flipTile';
-    let data = {
-      gameId: this.gameId,
-      tileId: tileId,
-    };
+  flipRandomTile() {
+    const unflippedTiles = this.tiles.filter((tile) => !tile.isFlipped);
 
-    this.webSocketService.sendMessage({ type, data });
+    if (unflippedTiles.length > 0) {
+      const randomIndex = Math.floor(Math.random() * unflippedTiles.length);
+      const tileToFlip = unflippedTiles[randomIndex];
+
+      // Update isFlipped. (Ideally, also send this flip action to your backend)
+      tileToFlip.isFlipped = true;
+      let type = 'flipTile';
+      let stringifiedTileId = tileToFlip.tileId.toString();
+      let data = {
+        gameId: this.gameId,
+        tileId: stringifiedTileId,
+      };
+      const flipTileMessage = new WebSocketMessage(type, '', data);
+      this.webSocketService.sendMessage(flipTileMessage);
+    } else {
+      // Handle the case where all tiles are already flipped (optional)
+      console.log('All tiles are flipped!');
+    }
   }
 }

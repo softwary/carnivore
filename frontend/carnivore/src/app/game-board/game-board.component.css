@@ -12,3 +12,22 @@
   .word-input input { 
     text-transform: uppercase;
   }
+
+  .game-board-two {
+    display: flex;
+    flex-wrap: wrap; /* Allow tiles to wrap */
+    justify-content: space-around; /* Distribute tiles evenly */
+  }
+  
+  .tile-card {
+    margin: 10px;
+    width: 80px;
+    height: 80px;
+    text-align: center; /* Center the tile content */
+  }
+  
+  .tile-button {
+    width: 100%; 
+    height: 100%; /* Match the size of the card */
+  }
+  

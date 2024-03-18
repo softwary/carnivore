@@ -2,19 +2,18 @@
   <mat-card-content>
     <h2>Game ID: {{ game.gameId }}</h2>
     <p>Number of Players: {{ game.playerIds.length }}</p>
-    <h3>Tiles</h3>
-    <div class="game-board">
-      <app-tile
-        *ngFor="let tile of tiles"
-        [letter]="tile.letter"
-        [isFlipped]="tile.isFlipped"
-        [tileId]="tile.tileId"
-        (tileClick)="handleTileFlipped(tile.tileId)"
-      ></app-tile>
-    </div>
 
-    <mat-card>
-      <mat-card-content>
+    <div class="game-board">
+      <ng-container *ngFor="let tile of tiles">
+        <mat-card *ngIf="tile.isFlipped" class="tile-card">
+          {{ tile.letter }}
+        </mat-card>
+      </ng-container>
+
+      <button mat-raised-button color="accent" (click)="flipRandomTile()">
+        Flip Tile
+      </button>
+      <mat-card>
         <form (ngSubmit)="submitWord()">
           <mat-form-field class="word-input">
             <mat-label>Enter Word</mat-label>
@@ -31,7 +30,7 @@
             Submit Word
           </button>
         </form>
-      </mat-card-content>
-    </mat-card>
+      </mat-card>
+    </div>
   </mat-card-content>
 </mat-card>

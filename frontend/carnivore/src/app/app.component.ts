@@ -11,6 +11,7 @@ import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
+import { WebSocketMessage } from './models/web-socket-message';
 
 @Component({
   selector: 'app-root',
@@ -24,7 +25,7 @@ import { MatIconModule } from '@angular/material/icon';
     MatButtonModule,
     MatToolbarModule,
     MatIconModule,
-    NgIf
+    NgIf,
   ],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
@@ -50,7 +51,7 @@ export class AppComponent implements OnInit {
   ngOnInit() {
     this.gameService.getGame().subscribe((game) => {
       if (game) {
-        console.log("app.component.ts --> game=", game)
+        console.log('app.component.ts --> game=', game);
         this.gameStarted = true;
         this.navigateToGameScreen();
       }
@@ -68,18 +69,7 @@ export class AppComponent implements OnInit {
   }
   async startGame() {
     console.log('@ startGame()');
-
-    // Retrieve the Firebase ID token
-    const idToken = await this.authService.getIdToken();
-    if (idToken) {
-      const startMessage = {
-        type: 'createGame',
-        data: { idToken: idToken },
-      };
-      this.webSocketService.sendMessage(startMessage);
-    } else {
-      console.log('User is not logged in');
-      // Handle not-logged-in scenario
-    }
+    const startMessage = new WebSocketMessage('createGame', '', {}); // No need to add idToken here anymore
+    this.webSocketService.sendMessage(startMessage);
   }
 }
