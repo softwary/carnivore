@@ -14,15 +14,24 @@
     </div>
 
     <mat-card>
-        <mat-card-content>
-          <form (ngSubmit)="submitWord()"> <mat-form-field class="word-input">
-              <mat-label>Enter Word</mat-label>
-              <input matInput type="text" [(ngModel)]="currentWord" name="wordInput">
-            </mat-form-field>
-      
-            <button mat-raised-button color="primary" type="submit">Submit Word</button>
-          </form>
-        </mat-card-content>
-      </mat-card>
+      <mat-card-content>
+        <form (ngSubmit)="submitWord()">
+          <mat-form-field class="word-input">
+            <mat-label>Enter Word</mat-label>
+            <input
+              matInput
+              type="text"
+              [(ngModel)]="currentWord"
+              name="wordInput"
+              alphaOnly
+            />
+          </mat-form-field>
+
+          <button mat-raised-button color="primary" type="submit">
+            Submit Word
+          </button>
+        </form>
+      </mat-card-content>
+    </mat-card>
   </mat-card-content>
 </mat-card>

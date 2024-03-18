@@ -8,6 +8,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { TileComponent } from '../tile/tile.component';
 import { MatInputModule } from '@angular/material/input';
+import { AlphaOnlyDirective } from '../alpha-only.directive'; 
 
 @Component({
   standalone: true,
@@ -18,7 +19,8 @@ import { MatInputModule } from '@angular/material/input';
     TileComponent,
     MatCardModule,
     MatButtonModule,
-    MatInputModule
+    MatInputModule,
+    AlphaOnlyDirective
   ],
   selector: 'app-game-board',
   templateUrl: './game-board.component.html',
