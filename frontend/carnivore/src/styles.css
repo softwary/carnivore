@@ -1,6 +1,49 @@
 /* You can add global styles to this file, and also import other style files */
+/* @import '~@angular/material/prebuilt-themes/purple-green.css';  */
 
 .app-container {
-    background-color: #240529;
-    /* Dark Purple Color */
+    /* background-color: mat-color($mat-grey, 800); */
+    /* Dark background */
+    /* color: #ffffff; */
+    /* Light text */
+    display: flex;
+    /* For main content layout */
+    /* min-height: 100vh; */
+    flex-direction: column;
+    color: #ffffff;
+    width: 100%;
+}
+
+.app-bar {
+    flex-direction: row;
+}
+
+
+.example-spacer {
+    flex: 1 1 auto;
+}
+
+.app-footer {
+    margin-top: auto;
+    /* Keep at the bottom */
+    /* background-color: mat-color($mat-indigo, 500); */
+    /* Primary color contrast */
+    color: #ffffff;
+    /* Light text */
+    text-align: center;
+}
+
+.center-button {
+    display: flex;
+    justify-content: center;
+}
+
+html,
+body {
+    height: 100%;
+}
+
+body {
+    margin: 0;
+    font-family: Roboto, "Helvetica Neue", sans-serif;
 }

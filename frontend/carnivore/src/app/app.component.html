@@ -1,31 +1,35 @@
-<!-- 
-<div>
-  <h1>Play Cannibaletters</h1>
-  <app-login></app-login>
-  <button (click)="startGame()">Start Game</button>
-
-</div>
-<router-outlet /> -->
-<header>
-  <link
-    rel="stylesheet"
-    href="https://cdnjs.cloudflare.com/ajax/libs/materialize/1.0.0/css/materialize.min.css"
-  />
-</header>
-<nav> 
-  <app-login (loginStatusChanged)="updateLoginStatus($event)"></app-login>
-</nav>
-
-
-<div class="container">
-  <h1 class="center-align">Play Cannibaletters</h1>
- 
-  <button class="btn waves-effect waves-light" (click)="startGame()">
-    Start Game
+<mat-toolbar color="primary">
+  <button
+    mat-icon-button
+    class="example-icon"
+    aria-label="Example icon-button with menu icon"
+  >
+    <mat-icon>menu</mat-icon>
   </button>
-</div>
+  <span>Cannibaletters</span>
+  <span class="example-spacer"></span>
+  <app-login (loginStatusChanged)="updateLoginStatus($event)"></app-login>
+</mat-toolbar>
 
-<footer>&copy; 2024 Cannibaletters</footer>
-
+<main class="app-container">
+  <mat-card>
+    <mat-card-content>
+      <p>
+        Cannibaletters is a word game played with 2+ players. There are 100
+        face-down letter tiles in the middle. Players take turns flipping over a
+        tile to create words. The first player to type out a valid English word
+        using the flipped tile gets to keep the letters in their word. Players
+        can steal words by creating an anagram using the existing letters. The
+        game ends when there are no more tiles left, and the player with the
+        most tiles wins.
+      </p>
+    </mat-card-content>
+    <mat-card-actions class="center-button">
+      <button mat-raised-button color="accent" (click)="startGameOnClick()">
+        Start Game
+      </button>
+    </mat-card-actions>
+  </mat-card>
+</main>
+<footer class="app-footer">&copy; 2024 Cannibaletters</footer>
 <router-outlet />
-
