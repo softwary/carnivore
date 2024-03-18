@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { GameService } from './game.service';
 import { Game, Tile } from '../models/game.model';
+import { AuthenticationService } from './authentication.service';
 
 @Injectable({
   providedIn: 'root',
@@ -8,13 +9,16 @@ import { Game, Tile } from '../models/game.model';
 export class WebSocketService {
   private webSocket!: WebSocket;
 
-  constructor(private gameService: GameService) {
+  constructor(
+    private gameService: GameService,
+    private authService: AuthenticationService
+  ) {
     this.connect();
   }
   private connect() {
     this.webSocket = new WebSocket('ws://192.168.1.170:3000');
     this.webSocket.onopen = () => {
-      console.log('WebSocket connection established');
+      console.log('@!WebSocket connection established');
     };
 
     this.webSocket.onmessage = (messageEvent) => {
@@ -23,9 +27,9 @@ export class WebSocketService {
       switch (type) {
         // Game Started
         case 'newGame':
-          console.log('properly received a newGame message from backend');
-          // let newGame = data as Game;
-          // this.gameService.updateGameState(newGame);
+          let newGame = data as Game;
+          console.log("What is newGame set to?newGame=", newGame)
+          this.gameService.updateGameState(newGame);
           break;
         // Game Joined
         // case "gameToJoin":
@@ -51,8 +55,8 @@ export class WebSocketService {
       console.error('WebSocket Error:', error);
     };
 
-    this.webSocket.onclose = () => {
-      console.log('WebSocket connection closed');
+    this.webSocket.onclose = (event) => {
+      console.log('❌WebSocket connection closed:', event.code, event.reason);
     };
   }
 
@@ -65,4 +69,18 @@ export class WebSocketService {
       console.error('WebSocket is not open. Message not sent:', message);
     }
   }
+
+  //   async authenticate() {
+  //       console.log('There was no idToken, trying to retrieve it.')
+  //       // Retrieve the Firebase ID token
+  //       const idToken = await this.authService.getIdToken();
+  //       if (idToken) {
+  //         console.log("in webSocketService, authenticate()", idToken)
+  //         const authenticationMessage = { type: 'authenticate', data: {idToken: idToken}}
+  //         this.sendMessage(authenticationMessage);
+  //       } else {
+  //         console.log('User is not logged in');
+  //         // Handle not-logged-in scenario
+  //       }
+  //     }
 }
