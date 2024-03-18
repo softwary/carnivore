@@ -2,6 +2,7 @@ import { Component, OnInit } from '@angular/core';
 import { Router, RouterOutlet } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { LoginComponent } from './login/login.component';
+import { NgIf } from '@angular/common';
 import { GameService } from './services/game.service';
 import { WebSocketService } from './services/websocket.service';
 import { AuthenticationService } from './services/authentication.service';
@@ -23,6 +24,7 @@ import { MatIconModule } from '@angular/material/icon';
     MatButtonModule,
     MatToolbarModule,
     MatIconModule,
+    NgIf
   ],
   templateUrl: './app.component.html',
   styleUrls: ['./app.component.css'],
@@ -48,6 +50,7 @@ export class AppComponent implements OnInit {
   ngOnInit() {
     this.gameService.getGame().subscribe((game) => {
       if (game) {
+        console.log("app.component.ts --> game=", game)
         this.gameStarted = true;
         this.navigateToGameScreen();
       }

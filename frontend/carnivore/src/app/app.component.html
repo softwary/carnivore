@@ -11,7 +11,7 @@
   <app-login (loginStatusChanged)="updateLoginStatus($event)"></app-login>
 </mat-toolbar>
 
-<main class="app-container">
+<main class="app-container" *ngIf="!gameStarted">
   <mat-card>
     <mat-card-content>
       <p>
@@ -30,6 +30,6 @@
       </button>
     </mat-card-actions>
   </mat-card>
-  <router-outlet />
 </main>
+<router-outlet />
 <footer class="app-footer">&copy; 2024 Cannibaletters</footer>

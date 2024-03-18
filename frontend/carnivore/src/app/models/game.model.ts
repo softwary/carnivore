@@ -7,9 +7,9 @@ export interface Tile {
 export interface Game {
     gameId: string;
     active: boolean;
-    players: any[]; // Adjust based on your Player model
+    playerIds: any[]; // Adjust based on your Player model
     winner: any; // Adjust based on your Player model
-    remainingLetters: [];
+    remainingLetters: {};
     tiles: Tile[];
     input: string;
     timer: any; // Adjust based on your Timer model

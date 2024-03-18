@@ -1,0 +1,15 @@
+.tile {
+    width: 25px;      /* Adjust size as needed */
+    height: 25px;     /* Adjust size as needed */
+    background-color: yellow;
+    color: black;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border: 1px solid #000; /* Optional border */
+  }
+  
+  .tile.show-letter {
+    /* Additional styles for when the letter is shown, if needed */
+  }
+  

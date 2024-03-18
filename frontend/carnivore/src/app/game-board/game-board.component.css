@@ -1,0 +1,6 @@
+.game-board {
+    display: flex;        /* Use flexbox */
+    flex-wrap: wrap;      /* Allow tiles to wrap onto the next line if needed */
+    justify-content: space-between; /* Space out the tiles */
+    gap: 10px;            /* Alternatively, you can use gap for spacing between tiles */
+  }

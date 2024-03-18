@@ -4,10 +4,22 @@ import { NgIf, NgFor } from '@angular/common';
 import { GameService } from '../services/game.service';
 import { WebSocketService } from '../services/websocket.service';
 import { Game, Tile } from '../models/game.model';
+import { MatButtonModule } from '@angular/material/button';
+import { MatCardModule } from '@angular/material/card';
+import { TileComponent } from '../tile/tile.component';
+import { MatInputModule } from '@angular/material/input';
 
 @Component({
   standalone: true,
-  imports: [NgIf, NgFor, FormsModule], // Import RouterModule
+  imports: [
+    NgIf,
+    NgFor,
+    FormsModule,
+    TileComponent,
+    MatCardModule,
+    MatButtonModule,
+    MatInputModule
+  ],
   selector: 'app-game-board',
   templateUrl: './game-board.component.html',
   styleUrls: ['./game-board.component.css'],
@@ -41,5 +53,35 @@ export class GameBoardComponent {
       }
       // Update component view based on the new game state
     });
+  }
+
+  submitWord() {
+    // Construct the message object
+    const message = {
+      type: 'submitWord',
+      data: {
+        word: this.currentWord,
+      },
+      // Include any other relevant information, like playerId or gameId
+    };
+
+    // Send the message via WebSocket
+    this.webSocketService.sendMessage(message);
+
+    // Clear the input field
+    this.currentWord = '';
+  }
+
+  handleTileFlipped(tileId: number) {
+    console.log('@ made it to handletileFlipped!, tileId= ', tileId);
+    // Send a message to the backend to flip the tile
+    console.log('@ handleTileFlipped gameId= ', this.gameId);
+    let type = 'flipTile';
+    let data = {
+      gameId: this.gameId,
+      tileId: tileId,
+    };
+
+    this.webSocketService.sendMessage({ type, data });
   }
 }
