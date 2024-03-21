@@ -1,6 +1,8 @@
 /* You can add global styles to this file, and also import other style files */
 /* @import '~@angular/material/prebuilt-themes/purple-green.css';  */
 
+
+
 .app-container {
     /* background-color: mat-color($mat-grey, 800); */
     /* Dark background */
@@ -45,5 +47,6 @@ body {
 
 body {
     margin: 0;
+    background-color: black;
     font-family: Roboto, "Helvetica Neue", sans-serif;
 }

@@ -1,14 +1,19 @@
 const Game = require("../game/game"); 
-// const { writeToFirebase, updateFirebase, writeGameData } = require("./firebase_utils");
+const Tile = require("../game/tile"); 
 
 const firebaseUtils = require("./firebase_utils");
 
 function createGame(playerData) {
   const newGame = new Game(playerData);
-  // console.log("in gameLogic, what is newGame?=", newGame);
   return newGame;
 }
 
-// Other game related functions (joinGame, flipTile, submitWord)
+function flipTile(game, tile) {
+  if (tile && !tile.isFlipped) {
+      game.assignLetterToTile(tile);
+      tile.flip();
+      return { ...tile};
+  } 
+}
 
-module.exports = { createGame, /*... other game functions */ };
+module.exports = { createGame, flipTile/*... other game functions */ };

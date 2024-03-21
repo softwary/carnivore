@@ -22,7 +22,7 @@ export class WebSocketService {
     };
 
     this.webSocket.onmessage = (messageEvent) => {
-      console.log('⬅️ RECEIVED: ', JSON.stringify(messageEvent.data));
+      console.log('⬅️ RECEIVED: ', JSON.parse(messageEvent.data));
       const { type, data } = JSON.parse(messageEvent.data);
       switch (type) {
         // Game Started
@@ -32,23 +32,19 @@ export class WebSocketService {
           this.gameService.updateGameState(newGame);
           break;
         // Game Joined
-        // case "gameToJoin":
-        //     let joinedGame = data as Game;
-        //     this.gameService.updateGameState(joinedGame);
-        //     break;
-        // // If a tile is flipped
+        case "gameJoined":
+            let joinedGame = data as Game;
+            this.gameService.updateGameState(joinedGame);
+            break;
+        // If a tile is flipped
         case "tileUpdate":
             console.log("in websocketService, tileUpdate. =", data);
-            let tileToUpdate = data as Tile;
-            console.log("in websocketService, tileToUpdate (should be Tile object now)=", tileToUpdate);
-            this.gameService.updateSingleTile(tileToUpdate);
-            // this.gameService.updateGameAttribute(tiles, tileInfo);
+            let gameWithUpdatedTile = data as Game;
+            this.gameService.updateGameState(gameWithUpdatedTile);
             break;
         // If server responds back with an error
         default:
-          console.log('@ Check message backend is sending');
-
-        // Handle other message types as needed
+          console.log('❌ @ Check message backend is sending');
       }
     };
 
@@ -68,7 +64,7 @@ export class WebSocketService {
       const idToken = await this.authService.getIdToken();
       if (idToken) {
         message.data.idToken = idToken; // Add idToken to the message
-        console.log('➡️ Sending via WebSocket this object: ', message);
+        console.log('📤 ➡️ Sending via WebSocket this object: ', message);
         this.webSocket.send(JSON.stringify(message));
       } else {
         console.log('❌ User is not logged in, websocket message was not sent');

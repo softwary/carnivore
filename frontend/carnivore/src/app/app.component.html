@@ -15,18 +15,22 @@
   <mat-card>
     <mat-card-content>
       <p>
-        Cannibaletters is a word game played with 2+ players. There are 100
+        Cannibaletters is a word game played with 2+ players. There are 144
         face-down letter tiles in the middle. Players take turns flipping over a
         tile to create words. The first player to type out a valid English word
         using the flipped tile gets to keep the letters in their word. Players
-        can steal words by creating an anagram using the existing letters. The
-        game ends when there are no more tiles left, and the player with the
-        most tiles wins.
+        can steal words by creating an anagram using the existing letters. 
+        
+        The game ends when there are no more tiles left, and the player with the
+        most tiles wins!
       </p>
     </mat-card-content>
     <mat-card-actions class="center-button">
       <button mat-raised-button color="accent" (click)="startGameOnClick()">
         Start Game
+      </button>
+      <button mat-raised-button color="accent" (click)="openJoinDialog()">
+        Join Game
       </button>
     </mat-card-actions>
   </mat-card>

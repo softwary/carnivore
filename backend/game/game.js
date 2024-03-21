@@ -33,8 +33,14 @@ class Game {
       Z: 2,
     };
     this.tiles = this.generateTiles();
-    // this.remainingLetters = this.initializeLetterPool();
-    // this.
+  }
+
+  addPlayer(playerId) {
+    // Input Validation (optional, but recommended)
+    if (!playerId || typeof(playerId) !== 'string') {
+      throw new Error('Invalid playerId. Please provide a valid string.');
+    }
+    this.playerIds.push(playerId); 
   }
 
   getPlayerById(playerId) {
@@ -42,17 +48,14 @@ class Game {
   }
 
   generateTiles() {
-    // Create tiles with unique IDs
-    const tiles = [];
+    const tiles = {}; // Use an object instead of an array
     for (let i = 0; i < this.getTotalTileCount(); i++) {
-      tiles.push(new Tile(i));
+      tiles[i] = new Tile(i); // Store tiles with their tileId as keys
     }
     return tiles;
   }
 
   getTotalTileCount() {
-    // console.log("in getTotalTileCount()");
-    // console.log("in getTotalTileCount(), this.remainingLetters= ", this.remainingLetters);
     // Calculate the total number of tiles based on the letter pool
     return Object.values(this.remainingLetters).reduce(
       (sum, count) => sum + count,
@@ -83,9 +86,9 @@ class Game {
   }
 
   flipTile(tileId) {
-    const tile = this.tiles.find((t) => t.tileId === tileId);
+    const tile = this.tiles[tileId];
     if (tile && !tile.isFlipped) {
-      this.assignLetterToTile(tile);
+      this.assignLetterToTile(tile); 
       tile.flip();
       return tile;
     }

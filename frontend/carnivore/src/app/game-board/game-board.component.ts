@@ -25,7 +25,6 @@ import { WebSocketMessage } from '../models/web-socket-message';
     MatInputModule,
     AlphaOnlyDirective,
     MatGridListModule,
-    MatButtonModule,
     MatIconModule,
   ],
   selector: 'app-game-board',
@@ -38,7 +37,7 @@ export class GameBoardComponent {
   tiles: Tile[] = [];
   gameId: string = '';
   currentWord: string = '';
-
+  
   constructor(
     private gameService: GameService,
     private webSocketService: WebSocketService
@@ -83,6 +82,7 @@ export class GameBoardComponent {
   }
 
   flipRandomTile() {
+    console.log("in flipRandomTile(), this.tiles =", this.tiles);
     const unflippedTiles = this.tiles.filter((tile) => !tile.isFlipped);
 
     if (unflippedTiles.length > 0) {

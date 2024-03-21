@@ -1,7 +1,7 @@
 <mat-card *ngIf="game">
   <mat-card-content>
     <h2>Game ID: {{ game.gameId }}</h2>
-    <p>Number of Players: {{ game.playerIds.length }}</p>
+    <!-- <p>Number of Players: {{ game.playerIds.length }}</p> -->
 
     <div class="game-board">
       <ng-container *ngFor="let tile of tiles">

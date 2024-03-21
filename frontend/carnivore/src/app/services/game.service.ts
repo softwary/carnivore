@@ -34,45 +34,6 @@ export class GameService {
     }
   }
 
-  // updateSingleTile(updatedTile: Tile) {
-  //   // console.log("BEFORE UPDATE in updateSingleTile, tiles=", this.gameState.getValue().tiles);
-  //   console.log('in updateSingleTile, updatedTile =', updatedTile);
-  //   const currentGame = this.gameState.getValue();
-  //   if (currentGame && currentGame.tiles) {
-  //     const tileIndex = currentGame.tiles.findIndex(
-  //       (t) => t.tileId === updatedTile.tileId
-  //     );
-  //     console.log("new tiles =currentGame.tiles=",currentGame.tiles);
-  //     if (tileIndex !== -1) {
-  //       currentGame.tiles[tileIndex] = updatedTile;
-  //       this.gameState.next(currentGame);
-  //     }
-  //   }
-  // }
-
-  // updateSingleTile(updatedTile: Tile) {
-  //   console.log('in updateSingleTile, updatedTile =', updatedTile);
-  //   const currentGame = this.gameState.getValue();
-  //   if (currentGame && currentGame.tiles) {
-  //     const tileIndex = currentGame.tiles.findIndex(
-  //       (t) => t.tileId === updatedTile.tileId
-  //     );
-
-  //     if (tileIndex !== -1) {
-  //       // Update existing tile object
-  //       currentGame.tiles[tileIndex] = {
-  //         ...currentGame.tiles[tileIndex],
-  //         ...updatedTile,
-  //       };
-
-  //       // Emit the updated game state
-  //       this.gameState.next(currentGame);
-  //     } else {
-  //       console.error(`Tile with tileId ${updatedTile.tileId} not found.`);
-  //     }
-  //   }
-  // }
-
   updateSingleTile(updatedTile: Tile) {
     console.log('in game.service.ts updateSingleTile, updatedTile =', updatedTile);
     const currentGame = this.gameState.getValue();
@@ -95,6 +56,7 @@ export class GameService {
         const updatedGame = { ...currentGame, tiles: newTiles };
   
         // Emit the updated game state
+        console.log("in updateSingleTile...updatedGame = (should have the gameId!)", updatedGame);
         this.gameState.next(updatedGame);
       } else {
         console.error(`Tile with tileId ${updatedTile.tileId} not found.`);

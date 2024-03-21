@@ -12,7 +12,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatIconModule } from '@angular/material/icon';
 import { WebSocketMessage } from './models/web-socket-message';
-
+import { MatDialog } from '@angular/material/dialog';
+import { JoinGameDialogComponent } from './join-game-dialog/join-game-dialog.component';
 @Component({
   selector: 'app-root',
   standalone: true,
@@ -25,6 +26,7 @@ import { WebSocketMessage } from './models/web-socket-message';
     MatButtonModule,
     MatToolbarModule,
     MatIconModule,
+    
     NgIf,
   ],
   templateUrl: './app.component.html',
@@ -39,7 +41,8 @@ export class AppComponent implements OnInit {
     private router: Router,
     private gameService: GameService,
     private webSocketService: WebSocketService,
-    private authService: AuthenticationService
+    private authService: AuthenticationService,
+    public Dialog: MatDialog
   ) {}
 
   isLoggedIn = false; // Store logged in status in app.component
@@ -67,7 +70,19 @@ export class AppComponent implements OnInit {
     this.startGame();
     this.router.navigate(['/game-board']);
   }
-  async startGame() {
+
+  openJoinDialog() {
+    const dialogRef = this.Dialog.open(JoinGameDialogComponent);
+    dialogRef.afterClosed().subscribe(gameId => {
+      if (gameId) {
+        console.log("openJoinDialog, gameId =", gameId);
+        const joinMessage = new WebSocketMessage('joinGame', '', {gameId: gameId});
+        this.webSocketService.sendMessage(joinMessage);
+      }
+    })
+  }
+
+  startGame() {
     console.log('@ startGame()');
     const startMessage = new WebSocketMessage('createGame', '', {}); // No need to add idToken here anymore
     this.webSocketService.sendMessage(startMessage);
