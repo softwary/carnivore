@@ -1,4 +1,4 @@
-import { Component, OnInit } from '@angular/core';
+import { Component, OnInit, ViewChild, ElementRef } from '@angular/core';
 import { MatDialogRef } from '@angular/material/dialog'
 import { FormsModule } from '@angular/forms';
 import { MatDialogActions } from '@angular/material/dialog';
@@ -19,5 +19,13 @@ import { MatDialogContent } from '@angular/material/dialog';
 })
 export class JoinGameDialogComponent {
   gameId: string = '';
+  @ViewChild('gameInput') gameInputElement!: ElementRef; // Get a reference to the input element
+
   constructor(public dialogRef: MatDialogRef<JoinGameDialogComponent>) {}
+  ngOnInit() {
+    // Focus the input field after the dialog is opened
+    setTimeout(() => {  
+      this.gameInputElement.nativeElement.focus(); 
+    });
+  }
 }
