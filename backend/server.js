@@ -29,9 +29,20 @@ function broadcastMessageToPlayers(gameId, message) {
     });
   }
 }
+
+function getGameIdByUserId(userId) {
+  for (const [gameId, playerWebSockets] of gamePlayerWebSockets.entries()) {
+    if (playerWebSockets.has(userId)) {
+      return gameId;
+    }
+  }
+  // Handle case where the user is not in any active game
+  return null;
+}
+
+// GameId: websockets (which have userIds)
 const gamePlayerWebSockets = new Map();
 
-let wsConnections = [];
 
 wss.on("connection", (ws, req) => {
   console.log("✅ Connected!");
@@ -49,16 +60,17 @@ wss.on("connection", (ws, req) => {
         console.log(`userId = ${userId}`);
         cl();
         ws.userId = userId;
-        wsConnections.push(ws);
         // Handle all requests since the user is authenticated
         switch (type) {
           // User wants to Create a Game
           case "createGame":
+            let newGame = gameLogic.createGame();
             // Create a new player object
-            let newPlayer = playerLogic.createPlayer(userId, ws);
-            let newGame = gameLogic.createGame([newPlayer.userId]);
-            await firebaseUtils.writeGameData(newGame);
+            let newPlayer = playerLogic.createPlayer(userId, newGame.gameId);
 
+            // Add the first player to the gamer(newPlayer);
+            newGame.addPlayer(newPlayer);
+            await firebaseUtils.writeGameData(newGame);
             // Add WebSocket to the map
             if (!gamePlayerWebSockets.has(newGame.gameId)) {
               gamePlayerWebSockets.set(newGame.gameId, new Map());
@@ -90,13 +102,15 @@ wss.on("connection", (ws, req) => {
                 );
                 throw new Error(`❌ Game with ID ${gameId} does not exist.`);
               }
+              // Create a new player object since game exists
+              let joiningPlayer = playerLogic.createPlayer(userId, gameId);
+              // Update game object to have the user in this game now
+              game.addPlayer(joiningPlayer);
               // Add WebSocket to the map
               if (!gamePlayerWebSockets.has(gameId)) {
                 gamePlayerWebSockets.set(gameId, new Map());
               }
               gamePlayerWebSockets.get(gameId).set(userId, ws);
-              // Update game object to have the user in this game now
-              game.addPlayer(userId);
               // Update game in firebase
               await firebaseUtils.writeGameData(game);
               // Retrieve updated game data
@@ -113,7 +127,7 @@ wss.on("connection", (ws, req) => {
           case "flipTile":
             try {
               const tileId = parseInt(data.tileId);
-              const gameId = data.gameId;
+              const gameId = getGameIdByUserId(userId);
               // 1. Validate Game and Tile Existence
               const gameToUpdateTileIn = await firebaseUtils.getGame(gameId);
               if (!gameToUpdateTileIn) {
@@ -154,6 +168,8 @@ wss.on("connection", (ws, req) => {
               console.error(`❌ Error flipping tile: ${error.message}`);
               ws.send(JSON.stringify({ type: "error", data: error.message }));
             }
+            break;
+          case "submitWord":
             break;
           default:
             console.log("❌ # Error - Check message frontend is sending");

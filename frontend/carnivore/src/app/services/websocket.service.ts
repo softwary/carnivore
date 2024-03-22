@@ -28,7 +28,6 @@ export class WebSocketService {
         // Game Started
         case 'newGame':
           let newGame = data as Game;
-          console.log('in websocketService, newGame. =', newGame);
           this.gameService.updateGameState(newGame);
           break;
         // Game Joined
@@ -38,7 +37,6 @@ export class WebSocketService {
             break;
         // If a tile is flipped
         case "tileUpdate":
-            console.log("in websocketService, tileUpdate. =", data);
             let gameWithUpdatedTile = data as Game;
             this.gameService.updateGameState(gameWithUpdatedTile);
             break;

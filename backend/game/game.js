@@ -1,9 +1,9 @@
 const Tile = require("./tile");
 
 class Game {
-  constructor(playerIds) {
+  constructor() {
     this.gameId = this.generateGameId(4);
-    this.playerIds = playerIds;
+    this.players = [];
     this.remainingLetters = {
       A: 13,
       B: 3,
@@ -35,12 +35,13 @@ class Game {
     this.tiles = this.generateTiles();
   }
 
-  addPlayer(playerId) {
+  addPlayer(player) {
     // Input Validation (optional, but recommended)
-    if (!playerId || typeof(playerId) !== 'string') {
+    if (!player.playerId || typeof(player.playerId) !== 'string') {
       throw new Error('Invalid playerId. Please provide a valid string.');
     }
-    this.playerIds.push(playerId); 
+    console.log("{game.js} in addPlayer, what does this game's players=?", this.players)
+    this.players.push(player); 
   }
 
   getPlayerById(playerId) {
@@ -120,6 +121,7 @@ class Game {
   }
 
   findPossibleInputOptions(word) {
+    console.log("{game.js} in findPossibleInputOptions");
     const lettersCopy = { ...this.remainingLetters };
     const possibleWords = [];
 
@@ -138,34 +140,35 @@ class Game {
   }
 
   checkWordStealing(playerId, word) {
+    console.log("{game.js} in checkWordStealing");
     const possibleWords = this.findPossibleInputOptions(word);
 
-    possibleWords.forEach((possibleWord) => {
-      this.playerIds.forEach((player) => {
-        if (
-          player.playerId !== playerId &&
-          player.words.includes(possibleWord)
-        ) {
-          // Remove the word from the other player
-          player.words = player.words.filter((w) => w !== possibleWord);
+    // possibleWords.forEach((possibleWord) => {
+    //   this.playerIds.forEach((player) => {
+    //     if (
+    //       player.playerId !== playerId &&
+    //       player.words.includes(possibleWord)
+    //     ) {
+    //       // Remove the word from the other player
+    //       player.words = player.words.filter((w) => w !== possibleWord);
 
-          // Add the new word to the current player's words
-          const currentPlayer = this.playerIds.find(
-            (p) => p.playerId === playerId
-          );
-          if (currentPlayer) {
-            currentPlayer.words.push(word);
-          }
+    //       // Add the new word to the current player's words
+    //       const currentPlayer = this.playerIds.find(
+    //         (p) => p.playerId === playerId
+    //       );
+    //       if (currentPlayer) {
+    //         currentPlayer.words.push(word);
+    //       }
 
-          // Update remainingLetters
-          word.split("").forEach((letter) => {
-            if (this.remainingLetters[letter.toUpperCase()] > 0) {
-              this.remainingLetters[letter.toUpperCase()]--;
-            }
-          });
-        }
-      });
-    });
+    //       // Update remainingLetters
+    //       word.split("").forEach((letter) => {
+    //         if (this.remainingLetters[letter.toUpperCase()] > 0) {
+    //           this.remainingLetters[letter.toUpperCase()]--;
+    //         }
+    //       });
+    //     }
+    //   });
+    // });
   }
 
   /* 
@@ -174,25 +177,26 @@ class Game {
   handleWordSubmission(player, word) {
     // Add your word processing logic here
     // This could include validating the word, updating scores, etc.
-    console.log("in handleWordSubmission!");
-    console.log("in handleWordSubmission! player= ", player, " word= ", word);
+    console.log("in handleWordSubmission! player= ", player.userId, " word= ", word);
     // Word Validation/Attribution Logic
     // First, make sure word incorporates a letter from the center tiles
-    if (isWordUsingARemainingTile(word)) {
+    if (this.isWordUsingARemainingTile(word)) {
       console.log("GOOD! word is using a remaining tile!");
       // Check if the word is even valid from dictionary API
       // 
       // Then, find out where the word is coming from
-      checkWordStealing(player, word);
+      this.checkWordStealing(player, word);
       
       if (player) {
         player.attributeWord(word);
         // Process the word submission for the player
       }
       return this;
+    } else {
+      console.log("BAD! word is NOT using a remaining tile!");
+      return;
+
     }
-    console.log("BAD! word is NOT using a remaining tile!");
-    return;
     // Optionally, return some result or status
   }
 }

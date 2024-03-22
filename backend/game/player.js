@@ -1,9 +1,8 @@
 class Player {
-    constructor(userId, ws) {
+    constructor(userId, gameId) {
         // super(username);
-        this.userId = userId;
-        this.ws = ws;
-        this.gameId = null;
+        this.playerId = userId;
+        this.gameId = gameId;
         this.words = []; // Array of Word objects
         this.score = 0; // Player's score
         this.turn = false; // Indicates if it's the player's turn

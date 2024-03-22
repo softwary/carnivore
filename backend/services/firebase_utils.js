@@ -1,11 +1,7 @@
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
-// const Game = require("../game/game");
-// import Game from '../game/game';
-
 require("firebase/analytics");
 require("firebase/database");
 const Game = require("../game/game");
+const Player = require("../game/player");
 
 // Initialize Firebase
 var admin = require("firebase-admin");
@@ -31,7 +27,6 @@ const firebaseConfig = {
 };
 
 async function verifyToken(token) {
-  // console.log(`In firebaseUtils.verifyToken(), token=' ${token}`);
   return admin
     .auth()
     .verifyIdToken(token)
@@ -44,29 +39,66 @@ async function verifyToken(token) {
     });
 }
 
+async function writePlayerData(player) {
+  // Update game in firebase (add the new player specifically)
+  const playerRef = admin
+    .database()
+    .ref(`games/${player.gameId}/players/${player.playerId}`);
+  await playerRef.set({
+    gameId: player.gameId,
+    words: [""],
+    score: 0,
+    turn: false,
+  });
+}
+
 async function writeGameData(game) {
+  const updates = {};
+  if (game.players != null) {
+    // Players
+    game.players.forEach(async (player) => {
+      await writePlayerData(player);
+    });
+  }
+
+  // Remaining Letters and Tiles
+  updates[`games/${game.gameId}/remainingLetters`] = game.remainingLetters;
+  updates[`games/${game.gameId}/tiles`] = game.tiles;
+
   await admin
     .database()
-    .ref(`games/${game.gameId}`)
-    .set({
-      playerIds: game.playerIds,
-      remainingLetters: game.remainingLetters,
-      tiles: game.tiles,
-    })
+    .ref()
+    .update(updates) // Perform all updates in one transaction
     .then(() => {
-      console.log(
-        "in firebase_utils(game) - Data created successfully in realtime db!",
-        game
-      );
-      return;
+      console.log("Data created successfully in realtime db!");
     })
     .catch((error) => {
-      console.log(
-        "in firebase_utils(game), there was an error trying to write to a new game table = ",
-        error
-      );
+      console.log("Error trying to write to a new game table = ", error);
       throw new Error();
     });
+}
+
+async function getPlayer(gameId, playerId) {
+  const firebaseGamePull = await admin
+    .database()
+    .ref(`games/${gameId}/players/${playerId}`)
+    .once("value");
+  const firebasePlayer = firebaseGamePull.val().players[playerId];
+  console.log("{firebaseUtils} firebasePlayer=", firebasePlayer);
+  const playerObj = new Player(playerId, gameId);
+  return playerObj;
+}
+
+function createPlayersFromFirebaseData(data) {
+  const players = [];
+  for (const playerId in data) {
+    if (data.hasOwnProperty(playerId)) {
+      const playerData = { [playerId]: data[playerId] };
+      const player = createPlayerFromFirebaseData(playerData);
+      players.push(player);
+    }
+  }
+  return players;
 }
 
 async function getGame(gameId) {
@@ -75,10 +107,12 @@ async function getGame(gameId) {
     .ref(`games/${gameId}`)
     .once("value");
   const firebaseGame = firebaseGamePull.val();
-  const gameObj = new Game(firebaseGame.playerIds);
+  let playerObjs = createPlayersFromFirebaseData(firebaseGame.players);
+  const gameObj = new Game();
   gameObj.gameId = gameId;
   gameObj.remainingLetters = firebaseGame.remainingLetters;
   gameObj.tiles = firebaseGame.tiles;
+  gameObj.players = playerObjs;
   return gameObj;
 }
 

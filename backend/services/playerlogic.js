@@ -1,8 +1,8 @@
 const Player = require("../game/player");
 const { writeToFirebase } = require("./firebase_utils");
 
-function createPlayer(username, ws, uid) {
-  const newPlayer = new Player(username, ws, uid);
+function createPlayer(userId, gameId) {
+  const newPlayer = new Player(userId, gameId);
   //   writeToFirebase(`player/${newGame.gameId}`, newGame.toFirebaseData());
   return newPlayer;
 }

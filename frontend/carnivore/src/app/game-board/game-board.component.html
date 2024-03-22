@@ -1,7 +1,7 @@
 <mat-card *ngIf="game">
   <mat-card-content>
     <h2>Game ID: {{ game.gameId }}</h2>
-    <!-- <p>Number of Players: {{ game.playerIds.length }}</p> -->
+    <p>Number of Players: {{ game.players.length }}</p>
 
     <div class="game-board">
       <ng-container *ngFor="let tile of tiles">
@@ -10,10 +10,9 @@
         </mat-card>
       </ng-container>
 
-      <button mat-raised-button color="accent" (click)="flipRandomTile()">
+      <button mat-raised-button color="accent" (click)="flipRandomTile()"  class="fixed-button">
         Flip Tile
       </button>
-      <mat-card>
         <form (ngSubmit)="submitWord()">
           <mat-form-field class="word-input">
             <mat-label>Enter Word</mat-label>
@@ -30,7 +29,6 @@
             Submit Word
           </button>
         </form>
-      </mat-card>
     </div>
   </mat-card-content>
 </mat-card>

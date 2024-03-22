@@ -37,7 +37,7 @@ export class GameBoardComponent {
   tiles: Tile[] = [];
   gameId: string = '';
   currentWord: string = '';
-  
+
   constructor(
     private gameService: GameService,
     private webSocketService: WebSocketService
@@ -67,22 +67,23 @@ export class GameBoardComponent {
   }
 
   submitWord() {
-    const type = 'submitWord';
-    const data = {
-      word: this.currentWord
-    };
+    if (this.currentWord.length > 0) {
+      const type = 'submitWord';
+      const data = {
+        word: this.currentWord,
+      };
+      const submitWordMessage = new WebSocketMessage(type, '', data);
+      // Send the message via WebSocket
+      this.webSocketService.sendMessage(submitWordMessage);
+    } else {
+      // Clear the input field
+      this.currentWord = '';
+    }
     // Include any other relevant information, like playerId or gameId
-
-    const submitWordMessage = new WebSocketMessage(type, '', data);
-    // Send the message via WebSocket
-    this.webSocketService.sendMessage(submitWordMessage);
-
-    // Clear the input field
-    this.currentWord = '';
   }
 
   flipRandomTile() {
-    console.log("in flipRandomTile(), this.tiles =", this.tiles);
+    console.log('in flipRandomTile(), this.tiles =', this.tiles);
     const unflippedTiles = this.tiles.filter((tile) => !tile.isFlipped);
 
     if (unflippedTiles.length > 0) {

@@ -34,3 +34,9 @@
     height: 100%; /* Match the size of the card */
   }
   
+  .fixed-button {
+    position: fixed;  /* Make the button's position fixed */
+    bottom: 20px;     /* Adjust this for distance from the bottom */ 
+    right: 20px;      /* Adjust this for distance from the right */
+    z-index: 1000;    /* Ensures the button stays on top of other elements */
+  }
