@@ -133,15 +133,10 @@ wss.on("connection", (ws, req) => {
               if (!gameToUpdateTileIn) {
                 throw new Error(`❌ Game with ID ${gameId} does not exist.`);
               }
-              // PROBLEM: game's objects are coming not as Tiles...
-              console.log(
-                "game's tiles should be tile objs...",
-                gameToUpdateTileIn.tiles[0]
-              ); // this is NOT the case
-              // Check state of tile in this game
               const tileToUpdate = new Tile(
                 tileId,
-                gameToUpdateTileIn.tiles[tileId].isFlipped
+                gameToUpdateTileIn.tiles[tileId].isFlipped,
+                gameToUpdateTileIn.tiles[tileId].inMiddle
               );
               if (!tileToUpdate || tileToUpdate.isFlipped) {
                 throw new Error(
@@ -153,11 +148,13 @@ wss.on("connection", (ws, req) => {
                 gameToUpdateTileIn,
                 tileToUpdate
               );
+              console.log("157");
               // 3. Update Firebase
               await firebaseUtils.updateTile(
                 gameId,
                 tileWithUpdatedFlipAndLetter
               );
+              console.log("162")
               const gameWithUpdatedTile = await firebaseUtils.getGame(gameId); // 5. Send Success Response to Client
               const tileUpdateMessage = {
                 type: "tileUpdate",

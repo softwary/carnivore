@@ -10,7 +10,8 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 export class TileComponent {
   @Input() letter!: string;
   @Input() isFlipped: boolean = false;
-  @Input() tileId!: number; // Ensure you have a unique identifier for each tile
+  @Input() tileId!: number; 
+  @Input() inMiddle: boolean = true;
   @Output() tileClick = new EventEmitter<number>();
 
   onTileClicked() {

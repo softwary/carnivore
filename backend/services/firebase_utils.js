@@ -1,6 +1,7 @@
 require("firebase/analytics");
 require("firebase/database");
 const Game = require("../game/game");
+const Tile = require("../game/tile");
 const Player = require("../game/player");
 
 // Initialize Firebase
@@ -39,8 +40,17 @@ async function verifyToken(token) {
     });
 }
 
+async function writeTileData(gameId, tile) {
+  const playerRef = admin
+    .database()
+    .ref(`games/${gameId}/tiles/${tile.tileId}`);
+  await playerRef.set({
+    inMiddle: tile.inMiddle,
+    isFlipped: tile.isFlipped,
+    letter: tile.letter,
+  });
+}
 async function writePlayerData(player) {
-  // Update game in firebase (add the new player specifically)
   const playerRef = admin
     .database()
     .ref(`games/${player.gameId}/players/${player.playerId}`);
@@ -63,7 +73,10 @@ async function writeGameData(game) {
 
   // Remaining Letters and Tiles
   updates[`games/${game.gameId}/remainingLetters`] = game.remainingLetters;
-  updates[`games/${game.gameId}/tiles`] = game.tiles;
+  // Tiles
+  game.tiles.forEach(async (tile) => {
+    await writeTileData(game.gameId, tile);
+  });
 
   await admin
     .database()
@@ -89,6 +102,24 @@ async function getPlayer(gameId, playerId) {
   return playerObj;
 }
 
+function createPlayerFromFirebaseData(firebasePlayerObj) {
+  // Extract the playerId from the Firebase object's key
+  const playerId = Object.keys(firebasePlayerObj)[0];
+
+  // Destructure the data from the nested object
+  const { gameId, score, turn, words } = firebasePlayerObj[playerId];
+
+  // Create a new Player object
+  const player = new Player(playerId, gameId);
+
+  // Assign the properties from the Firebase data
+  player.score = score;
+  player.turn = turn;
+  player.words = words;
+
+  return player;
+}
+
 function createPlayersFromFirebaseData(data) {
   const players = [];
   for (const playerId in data) {
@@ -101,26 +132,60 @@ function createPlayersFromFirebaseData(data) {
   return players;
 }
 
+// Tiles
+function createTileFromFirebaseData(firebaseTileObj) {
+  // Extract the tileId from the Firebase object's key
+  const tileId = Object.keys(firebaseTileObj)[0];
+
+  // Destructure the data from the nested object
+  const { letter, isFlipped, inMiddle } = firebaseTileObj[tileId];
+
+  // Create a new Tile object
+  const tile = new Tile(tileId, isFlipped, inMiddle);
+
+  // Assign the properties from the Firebase data
+  tile.letter = letter;
+  tile.isFlipped = isFlipped;
+  tile.inMiddle = inMiddle;
+
+  return tile;
+}
+
+function createTilesFromFirebaseData(data) {
+  const tiles = [];
+  for (const tileId in data) {
+    if (data.hasOwnProperty(tileId)) {
+      const tileData = { [tileId]: data[tileId] };
+      const tile = createTileFromFirebaseData(tileData);
+      tiles.push(tile);
+    }
+  }
+  return tiles;
+}
+// Get Game from Firebase and return it as a Game object
 async function getGame(gameId) {
   const firebaseGamePull = await admin
     .database()
     .ref(`games/${gameId}`)
     .once("value");
   const firebaseGame = firebaseGamePull.val();
-  let playerObjs = createPlayersFromFirebaseData(firebaseGame.players);
   const gameObj = new Game();
   gameObj.gameId = gameId;
   gameObj.remainingLetters = firebaseGame.remainingLetters;
-  gameObj.tiles = firebaseGame.tiles;
+  let tileObjs = createTilesFromFirebaseData(firebaseGame.tiles);
+  gameObj.tiles = tileObjs;
+  let playerObjs = createPlayersFromFirebaseData(firebaseGame.players);
   gameObj.players = playerObjs;
   return gameObj;
 }
 
+// Get Tile from Firebase and return it as a Tile object
 async function getTile(gameId, tileId) {
   const gameSnapshot = await admin
     .database()
     .ref(`games/${gameId}`)
     .once("value");
+
   return gameSnapshot.val().tiles[tileId];
 }
 

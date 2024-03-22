@@ -25,8 +25,7 @@ import { JoinGameDialogComponent } from './join-game-dialog/join-game-dialog.com
     MatCardModule,
     MatButtonModule,
     MatToolbarModule,
-    MatIconModule,
-    
+    MatIconModule,    
     NgIf,
   ],
   templateUrl: './app.component.html',

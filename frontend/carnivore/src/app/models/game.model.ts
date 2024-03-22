@@ -2,6 +2,7 @@ export interface Tile {
     tileId: number;
     letter: string;
     isFlipped: boolean;
+    inMiddle: boolean;
 }
 
 export interface Game {

@@ -5,7 +5,7 @@
 
     <div class="game-board">
       <ng-container *ngFor="let tile of tiles">
-        <mat-card *ngIf="tile.isFlipped" class="tile-card">
+        <mat-card *ngIf="tile.isFlipped && tile.inMiddle" class="tile-card">
           {{ tile.letter }}
         </mat-card>
       </ng-container>

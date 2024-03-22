@@ -49,7 +49,7 @@ class Game {
   }
 
   generateTiles() {
-    const tiles = {}; // Use an object instead of an array
+    const tiles = []; 
     for (let i = 0; i < this.getTotalTileCount(); i++) {
       tiles[i] = new Tile(i); // Store tiles with their tileId as keys
     }
