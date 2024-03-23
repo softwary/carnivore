@@ -139,36 +139,85 @@ class Game {
     return possibleWords;
   }
 
+  // checkWordStealing(playerId, word) {
+  //   console.log("{game.js} in checkWordStealing");
+  //   const possibleWords = this.findPossibleInputOptions(word);
+  //   console.log("{game.js} in checkWordStealing possibleWords=",possibleWords);
+
+  //   possibleWords.forEach((possibleWord) => {
+  //     console.log("{game.js} in checkWordStealing checking possible words...possibleWord=",possibleWord);
+  //     this.players.forEach((player) => {
+  //       console.log("{game.js} in checkWordStealing, player=", player);
+  //       if (
+  //         // player.playerId !== playerId &&
+  //         player.words.includes(possibleWord)
+  //       ) {
+  //         console.log(" ... ")
+  //         console.log("that player's words before stolen=", player.words);
+  //         // Remove the word from the other player
+  //         player.words = player.words.filter((w) => w !== possibleWord);
+  //         // update that player's words in the game
+  //         this.players[player].words = player.words;
+  //         console.log(" ... ")
+  //         console.log(" ... ")
+  //         console.log("that player's words AFTER being stolen=", player.words);
+  //         // Add the new word to the current player's words
+  //         const currentPlayer = this.players.find(
+  //           (player) => player.playerId === playerId
+  //         );
+  //         if (currentPlayer) {
+  //           console.log("this player's words before they stole them!=", player.words);
+  //           currentPlayer.words.push(word);
+  //           console.log("this player's words AFTER they successfully stole them!=", player.words);
+  //           // update current game's player's words...
+  //         }
+
+  //         // Update remainingLetters
+  //         word.split("").forEach((letter) => {
+  //           if (this.remainingLetters[letter.toUpperCase()] > 0) {
+  //             this.remainingLetters[letter.toUpperCase()]--;
+  //           }
+  //         });
+  //       }
+  //     });
+  //   });
+  // }
   checkWordStealing(playerId, word) {
     console.log("{game.js} in checkWordStealing");
     const possibleWords = this.findPossibleInputOptions(word);
-
-    // possibleWords.forEach((possibleWord) => {
-    //   this.playerIds.forEach((player) => {
-    //     if (
-    //       player.playerId !== playerId &&
-    //       player.words.includes(possibleWord)
-    //     ) {
-    //       // Remove the word from the other player
-    //       player.words = player.words.filter((w) => w !== possibleWord);
-
-    //       // Add the new word to the current player's words
-    //       const currentPlayer = this.playerIds.find(
-    //         (p) => p.playerId === playerId
-    //       );
-    //       if (currentPlayer) {
-    //         currentPlayer.words.push(word);
-    //       }
-
-    //       // Update remainingLetters
-    //       word.split("").forEach((letter) => {
-    //         if (this.remainingLetters[letter.toUpperCase()] > 0) {
-    //           this.remainingLetters[letter.toUpperCase()]--;
-    //         }
-    //       });
-    //     }
-    //   });
-    // });
+    console.log("{game.js} in checkWordStealing possibleWords=", possibleWords);
+  
+    possibleWords.forEach((possibleWord) => {
+      console.log("{game.js} in checkWordStealing checking possible words...possibleWord=", possibleWord);
+      this.players.forEach((player) => {
+        if (player.words.includes(possibleWord)) {
+          console.log("... Removing stolen word from", player.playerId);
+          console.log("Before removal:", player.words);
+  
+          // Remove the word from the other player
+          player.words = player.words.filter((w) => w !== possibleWord);
+          
+          console.log("After removal:", player.words);
+        }
+      });
+  
+      const currentPlayer = this.players.find(
+        (p) => p.playerId === playerId
+      );
+      if (currentPlayer) {
+        console.log("Current player's words before adding:", currentPlayer.words);
+        currentPlayer.words.push(word);
+        console.log("Current player's words after adding:", currentPlayer.words);
+      }
+    });
+  
+    // Update remainingLetters for each letter in the stolen word
+    word.split("").forEach((letter) => {
+      if (this.remainingLetters[letter.toUpperCase()] > 0) {
+        this.remainingLetters[letter.toUpperCase()]--;
+      }
+    });
+    return this;
   }
 
   /* 
@@ -177,7 +226,7 @@ class Game {
   handleWordSubmission(player, word) {
     // Add your word processing logic here
     // This could include validating the word, updating scores, etc.
-    console.log("in handleWordSubmission! player= ", player.userId, " word= ", word);
+    console.log("in handleWordSubmission! player= ", player.playerId, " word= ", word);
     // Word Validation/Attribution Logic
     // First, make sure word incorporates a letter from the center tiles
     if (this.isWordUsingARemainingTile(word)) {

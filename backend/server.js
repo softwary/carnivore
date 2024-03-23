@@ -1,3 +1,111 @@
+/*const express = require("express");
+const http = require("http");
+const WebSocket = require("ws");
+const url = require("url");
+const firebaseUtils = require("./services/firebase_utils");
+var admin = require("firebase-admin");
+const Game = require("./game/game");
+const Tile = require("./game/tile");
+const app = express();
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
+
+const gameLogic = require("./services/gamelogic");
+const playerLogic = require("./services/playerlogic");
+
+function cl() {
+  console.log(" ..... ");
+  console.log(" ..... ");
+}
+
+// GameId: websockets (which have userIds)
+const gamePlayerWebSockets = new Map();
+
+function broadcastMessageToPlayers(gameId, message) {
+  console.log("📤 broadcasted this message:", message);
+  if (gamePlayerWebSockets.has(gameId)) {
+    const playersWebSockets = gamePlayerWebSockets.get(gameId);
+    playersWebSockets.forEach((ws) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        // Check if the WebSocket is still open
+        ws.send(JSON.stringify(message));
+      }
+    });
+  }
+}
+function getPlayerIdByWebSocket(ws) {
+  for (const [gameId, playerWebSockets] of gamePlayerWebSockets.entries()) {
+    if (playerWebSockets.has(ws)) {
+      // Note: We compare the websockets directly
+      for (const [userId, storedWs] of playerWebSockets.entries()) {
+        if (ws === storedWs) {
+          // Check for WebSocket object equality
+          return userId;
+        }
+      }
+    }
+  }
+  return null; // Player not found
+}
+
+function updateWebSocketForUser(userId, newWebSocket) {
+  // Iterate over all games
+  for (const [gameId, playerWebSockets] of gamePlayerWebSockets.entries()) {
+    // Check if this user is part of the current game
+    if (playerWebSockets.has(userId)) {
+      // Update the WebSocket for this user
+      playerWebSockets.set(userId, newWebSocket);
+      console.log(`WebSocket updated for user: ${userId}`);
+      console.log("gamePlayerWebSockets=", gamePlayerWebSockets);
+      return;
+    }
+  }
+  // If the user is not part of any game, we might add them to a game later
+}
+
+function getGameIdByUserId(userId) {
+  for (const [gameId, playerWebSockets] of gamePlayerWebSockets.entries()) {
+    if (playerWebSockets.has(userId)) {
+      return gameId;
+    }
+  }
+  // Handle case where the user is not in any active game
+  return null;
+}
+
+// wss.on("connection", (ws, req) => {
+//   console.log("✅ Connected!");
+//   // Proceed with handling messages from this authenticated user
+//   // ws.on("message", async (message) => {
+//   //   try {
+//   //     const { type, data } = JSON.parse(message);
+//   //     console.log("# Received: %s", message);
+//   //     cl();
+//   //     console.log(`type = ${type}`);
+//   //     console.log(`data =`, data);
+//   //     if (data && data.idToken) {
+//   //       const userId = await firebaseUtils.verifyToken(data.idToken);
+wss.on("connection", (ws, req) => {
+  console.log("✅ Connected!");
+  // Proceed with handling messages from this authenticated user
+  ws.on("message", async (message) => {
+    try {
+      const { type, data } = JSON.parse(message);
+      console.log("# Received: %s", message);
+      cl();
+      console.log(`type = ${type}`);
+      console.log(`data =`, data);
+      if (data && data.idToken) {
+        const userId = await firebaseUtils.verifyToken(data.idToken);
+
+        // Update the WebSocket reference for the user
+        updateWebSocketForUser(userId, ws);
+
+        cl();
+        console.log(`userId = ${userId}`);
+        cl();
+        ws.userId = userId;
+        */
 const express = require("express");
 const http = require("http");
 const WebSocket = require("ws");
@@ -17,16 +125,43 @@ function cl() {
   console.log(" ..... ");
   console.log(" ..... ");
 }
+
+// GameId: websockets (which have userIds)
+const gamePlayerWebSockets = new Map();
+
 function broadcastMessageToPlayers(gameId, message) {
-  console.log("📤 broadcasted this message:", message);
+  // console.log("📤 broadcasted this message:", message);
   if (gamePlayerWebSockets.has(gameId)) {
     const playersWebSockets = gamePlayerWebSockets.get(gameId);
     playersWebSockets.forEach((ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         // Check if the WebSocket is still open
         ws.send(JSON.stringify(message));
+        console.log("📤 broadcasted message to all players", message.type);
       }
     });
+  }
+}
+
+function getPlayerIdByWebSocket(ws) {
+  for (const [gameId, playerWebSockets] of gamePlayerWebSockets.entries()) {
+    for (const [userId, storedWs] of playerWebSockets.entries()) {
+      if (ws === storedWs) {
+        // Check for WebSocket object equality
+        return userId;
+      }
+    }
+  }
+  return null; // Player not found
+}
+
+function updateWebSocketForUser(userId, newWebSocket) {
+  for (const [gameId, playerWebSockets] of gamePlayerWebSockets.entries()) {
+    if (playerWebSockets.has(userId)) {
+      playerWebSockets.set(userId, newWebSocket);
+      console.log(`WebSocket updated for user: ${userId}`);
+      return;
+    }
   }
 }
 
@@ -36,17 +171,11 @@ function getGameIdByUserId(userId) {
       return gameId;
     }
   }
-  // Handle case where the user is not in any active game
-  return null;
+  return null; // Handle case where the user is not in any active game
 }
-
-// GameId: websockets (which have userIds)
-const gamePlayerWebSockets = new Map();
-
 
 wss.on("connection", (ws, req) => {
   console.log("✅ Connected!");
-  // Proceed with handling messages from this authenticated user
   ws.on("message", async (message) => {
     try {
       const { type, data } = JSON.parse(message);
@@ -56,6 +185,7 @@ wss.on("connection", (ws, req) => {
       console.log(`data =`, data);
       if (data && data.idToken) {
         const userId = await firebaseUtils.verifyToken(data.idToken);
+        updateWebSocketForUser(userId, ws); // Update WebSocket reference for the user
         cl();
         console.log(`userId = ${userId}`);
         cl();
@@ -67,7 +197,6 @@ wss.on("connection", (ws, req) => {
             let newGame = gameLogic.createGame();
             // Create a new player object
             let newPlayer = playerLogic.createPlayer(userId, newGame.gameId);
-
             // Add the first player to the gamer(newPlayer);
             newGame.addPlayer(newPlayer);
             await firebaseUtils.writeGameData(newGame);
@@ -81,10 +210,10 @@ wss.on("connection", (ws, req) => {
               data: newGame,
             };
             ws.send(JSON.stringify(newGameCreatedMessage));
-            console.log(
-              "📤 sent this message to frontend, newGameCreated=",
-              newGameCreatedMessage
-            );
+            // console.log(
+            //   "📤 sent this message to frontend, newGameCreated=",
+            //   newGameCreatedMessage
+            // );
             break;
           case "joinGame":
             try {
@@ -148,13 +277,11 @@ wss.on("connection", (ws, req) => {
                 gameToUpdateTileIn,
                 tileToUpdate
               );
-              console.log("157");
               // 3. Update Firebase
               await firebaseUtils.updateTile(
                 gameId,
                 tileWithUpdatedFlipAndLetter
               );
-              console.log("162")
               const gameWithUpdatedTile = await firebaseUtils.getGame(gameId); // 5. Send Success Response to Client
               const tileUpdateMessage = {
                 type: "tileUpdate",
@@ -167,6 +294,57 @@ wss.on("connection", (ws, req) => {
             }
             break;
           case "submitWord":
+            cl();
+            const gameId = getGameIdByUserId(userId);
+            // 1. Validate Game and Player Existence
+            const gameToSubmitWord = await firebaseUtils.getGame(gameId);
+            if (!gameToSubmitWord) {
+              throw new Error(
+                `❌ Game with ID ${gameToSubmitWord.gameId} does not exist.`
+              );
+            }
+            cl();
+            const playerIdThatSubmittedWord = getPlayerIdByWebSocket(ws);
+            cl();
+            console.log("Searching for player ID:", playerIdThatSubmittedWord);
+            const playerThatSubmittedWord = gameToSubmitWord.players.find(
+              (player) => player.playerId === playerIdThatSubmittedWord
+            );
+            console.log(
+              "Found playerThatSubmittedWord:",
+              playerThatSubmittedWord
+            );
+            cl();
+            if (!playerThatSubmittedWord) {
+              throw new Error(
+                `❌ Player with ID ${playerIdThatSubmittedWord} does not exist.`
+              );
+            }
+            const word = data.word;
+            console.log("{server} submitting Word=", word);
+            cl();
+            let gameWithWordSubmitted = gameToSubmitWord.handleWordSubmission(
+              playerThatSubmittedWord,
+              word
+            );
+            console.log(
+              "{server} gameWithWordSubmitted.players[0].words=",
+              gameWithWordSubmitted.players[0].words
+            );
+            await firebaseUtils.writeGameData(gameWithWordSubmitted);
+            // Retrieve updated game data
+            const gameWithWordSubmittedInFirebase = await firebaseUtils.getGame(
+              gameId
+            );
+            console.log(
+              "{server} gameWithWordSubmittedInFirebase.players=",
+              gameWithWordSubmittedInFirebase.players
+            );
+            const gameUpdatedWordsMessage = {
+              type: "gameWithWord",
+              data: gameWithWordSubmittedInFirebase,
+            };
+            broadcastMessageToPlayers(gameId, gameUpdatedWordsMessage);
             break;
           default:
             console.log("❌ # Error - Check message frontend is sending");

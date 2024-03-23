@@ -56,9 +56,9 @@ async function writePlayerData(player) {
     .ref(`games/${player.gameId}/players/${player.playerId}`);
   await playerRef.set({
     gameId: player.gameId,
-    words: [""],
-    score: 0,
-    turn: false,
+    words: player.words,
+    score: player.score,
+    turn: player.turn,
   });
 }
 
@@ -92,13 +92,20 @@ async function writeGameData(game) {
 }
 
 async function getPlayer(gameId, playerId) {
+  console.log(
+    "{firebaseUtils} in getPlayer gameId=",
+    gameId,
+    " playerId=",
+    playerId
+  );
   const firebaseGamePull = await admin
     .database()
     .ref(`games/${gameId}/players/${playerId}`)
     .once("value");
-  const firebasePlayer = firebaseGamePull.val().players[playerId];
-  console.log("{firebaseUtils} firebasePlayer=", firebasePlayer);
-  const playerObj = new Player(playerId, gameId);
+  const firebasePlayer = firebaseGamePull.val();
+  // console.log("{firebaseUtils} in getPlayer() firebasePlayer=", firebasePlayer);
+  // Create a Player object directly
+  const playerObj = createPlayerFromFirebaseData(firebasePlayer);
   return playerObj;
 }
 
@@ -115,7 +122,7 @@ function createPlayerFromFirebaseData(firebasePlayerObj) {
   // Assign the properties from the Firebase data
   player.score = score;
   player.turn = turn;
-  player.words = words;
+  player.words = words || [];
 
   return player;
 }
@@ -162,6 +169,7 @@ function createTilesFromFirebaseData(data) {
   }
   return tiles;
 }
+
 // Get Game from Firebase and return it as a Game object
 async function getGame(gameId) {
   const firebaseGamePull = await admin
@@ -185,7 +193,6 @@ async function getTile(gameId, tileId) {
     .database()
     .ref(`games/${gameId}`)
     .once("value");
-
   return gameSnapshot.val().tiles[tileId];
 }
 
@@ -207,5 +214,6 @@ module.exports = {
   verifyToken,
   updateTile,
   getTile,
+  getPlayer,
   getGame,
 };

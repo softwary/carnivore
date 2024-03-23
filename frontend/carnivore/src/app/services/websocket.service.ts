@@ -31,15 +31,20 @@ export class WebSocketService {
           this.gameService.updateGameState(newGame);
           break;
         // Game Joined
-        case "gameJoined":
-            let joinedGame = data as Game;
-            this.gameService.updateGameState(joinedGame);
-            break;
+        case 'gameJoined':
+          let joinedGame = data as Game;
+          this.gameService.updateGameState(joinedGame);
+          break;
         // If a tile is flipped
-        case "tileUpdate":
-            let gameWithUpdatedTile = data as Game;
-            this.gameService.updateGameState(gameWithUpdatedTile);
-            break;
+        case 'tileUpdate':
+          let gameWithUpdatedTile = data as Game;
+          this.gameService.updateGameState(gameWithUpdatedTile);
+          break;
+        // If a word is submitted
+        case 'gameWithWord':
+          let gameWithWord = data as Game;
+          this.gameService.updateGameState(gameWithWord);
+          break;
         // If server responds back with an error
         default:
           console.log('❌ @ Check message backend is sending');
