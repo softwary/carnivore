@@ -1,0 +1,8 @@
+<mat-card-content *ngIf="player?.words"> 
+    <h3>{{ player?.playerId }}'s Words:</h3>
+    <ul>
+      <li *ngFor="let word of player?.words"> 
+        {{ word }}
+      </li>
+    </ul>
+</mat-card-content>
