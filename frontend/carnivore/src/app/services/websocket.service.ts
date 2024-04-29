@@ -16,7 +16,8 @@ export class WebSocketService {
     this.connect();
   }
   private connect() {
-    this.webSocket = new WebSocket('ws://192.168.1.170:3000');
+    // this.webSocket = new WebSocket('ws://localhost:3000');
+    this.webSocket = new WebSocket('ws://192.168.1.154:3000');
     this.webSocket.onopen = () => {
       console.log('✅ WebSocket connection established');
     };
