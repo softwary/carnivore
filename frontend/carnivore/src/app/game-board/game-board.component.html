@@ -16,7 +16,7 @@
         <form (ngSubmit)="submitWord()">
           <mat-form-field class="word-input">
             <mat-label>Enter Word</mat-label>
-            <input matInput type="text" [(ngModel)]="currentWord" name="wordInput" alphaOnly autofocus />
+            <input matInput type="text" (paste)="preventPaste($event)" [(ngModel)]="currentWord" name="wordInput" alphaOnly autofocus />
           </mat-form-field>
           <button mat-raised-button color="primary" type="submit">
             Submit Word

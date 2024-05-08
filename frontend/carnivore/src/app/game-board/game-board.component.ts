@@ -6,7 +6,6 @@ import { WebSocketService } from '../services/websocket.service';
 import { Game, Tile } from '../models/game.model';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
-import { TileComponent } from '../tile/tile.component';
 import { MatInputModule } from '@angular/material/input';
 import { AlphaOnlyDirective } from '../alpha-only.directive';
 import { MatGridListModule } from '@angular/material/grid-list';
@@ -21,7 +20,6 @@ import { PlayerWordBoardComponent } from '../player-word-board/player-word-board
     NgIf,
     NgFor,
     FormsModule,
-    TileComponent,
     MatCardModule,
     MatButtonModule,
     MatInputModule,
@@ -56,7 +54,11 @@ export class GameBoardComponent {
     }
   }
 
-
+  preventPaste(event: ClipboardEvent): void {
+    event.preventDefault();
+    // Optional: Alert the user that pasting is disabled
+    alert('Pasting is not allowed in this input.');
+  }
 
   ngOnInit() {
     // console.log("@ in game-board, game = ", this.game)
