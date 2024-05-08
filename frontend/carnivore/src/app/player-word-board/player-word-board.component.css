@@ -1,0 +1,23 @@
+/* .tile-card {
+    display: inline-block;
+    margin: 2px;
+    padding: 10px;
+    text-align: center;
+    border: 1px solid #ccc; /* Add a border to visualize tiles */
+  /* } */ 
+
+  .tile-card {
+    display: inline-block;
+    /* margin: 2px; */
+    padding: 10px;
+    text-align: center;
+    border: 1px solid #ccc; /* Add a border to visualize tiles */
+    background-color: #f0f0f0; /* Light grey background */
+    color: black;
+    width: 30px; /* Fixed width for uniformity */
+    height: 30px; /* Fixed height for uniformity */
+  }
+  .word-container {
+    margin-bottom: 10px;
+  }
+  

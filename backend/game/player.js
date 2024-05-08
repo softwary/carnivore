@@ -16,10 +16,7 @@ class Player {
     attributeWord(word) {
         this.words.push(word);
         this.wordSignatures.push(this.createSignature(word));
-        console.log("{player.js} attributing word to this player...player=", this);
-        console.log("this player's score before increasing it..", this.playerId, " | ", this.score)
         this.score += word.length;
-        console.log("AFTER INCREASING this player's score to add the word (",word," [",word.length,"]) before increasing it..", this.playerId, " | ", this.score)
     }
     
     createSignature(text) {
@@ -29,12 +26,13 @@ class Player {
         }
         return signature;
     }
+    
+    startTurn() {
+        this.turn = true;
+    }
 
     endTurn() {
-        // Ask Game object whose turn is next
-        // Set current Player.turn = false
-        // Set next Player.turn = true
-        // This method will likely need to interact with the 'Game' class
+        this.turn = false;
     }
 }
 

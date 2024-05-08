@@ -3,7 +3,7 @@ import { FormsModule } from '@angular/forms';
 import { NgIf, NgFor } from '@angular/common';
 import { GameService } from '../services/game.service';
 import { WebSocketService } from '../services/websocket.service';
-import { Game, Tile } from '../models/game.model';
+import { Game } from '../models/game.model';
 import { MatButtonModule } from '@angular/material/button';
 import { MatCardModule } from '@angular/material/card';
 import { MatInputModule } from '@angular/material/input';
@@ -39,6 +39,7 @@ export class GameBoardComponent {
   tiles: string[] = [];
   gameId: string = '';
   currentWord: string = '';
+  playerWhoseTurnItIs: string = '';
 
   constructor(
     private gameService: GameService,
@@ -69,6 +70,7 @@ export class GameBoardComponent {
         this.gameId = gameState.gameId;
         console.log('@ game-board gameState= ', this.game);
         this.tiles = gameState.flippedLetters;
+        this.playerWhoseTurnItIs = gameState.players[gameState.currentTurnIndex].playerId;
       }
       // Update component view based on the new game state
     });
@@ -94,26 +96,11 @@ export class GameBoardComponent {
   }
 
   flipRandomTile() {
-    console.log('in flipRandomTile(), this.tiles =', this.tiles);
-    // const unflippedTiles = this.tiles.filter((tile) => !tile.isFlipped);
-
-    // if (unflippedTiles.length > 0) {
-    //   const randomIndex = Math.floor(Math.random() * unflippedTiles.length);
-    //   const tileToFlip = unflippedTiles[randomIndex];
-
-    // Update isFlipped. (Ideally, also send this flip action to your backend)
-    // tileToFlip.isFlipped = true;
     let type = 'flipTile';
-    // let stringifiedTileId = tileToFlip.tileId.toString();
     let data = {
       gameId: this.gameId
-      // tileId: stringifiedTileId,
     };
     const flipTileMessage = new WebSocketMessage(type, '', data);
     this.webSocketService.sendMessage(flipTileMessage);
-    // } else {
-    //   // Handle the case where all tiles are already flipped (optional)
-    //   console.log('All tiles are flipped!');
-    // }
   }
 }

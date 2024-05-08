@@ -1,3 +1,4 @@
+const wordDictionary = require("../wordDictionary");
 const Tile = require("./tile");
 
 class Game {
@@ -36,8 +37,71 @@ class Game {
         this.tiles = this.generateTiles();
         this.flippedLetters = {};
         this.potentialSteals = [];
+        this.currentTurnIndex = 0;
     }
-    
+
+    /**
+     * Sets the turn to the player with the given playerId.
+     * 
+     * @param {Object} playerToSetTurnTo - An object representing a player, expected to have a `playerId` property.
+     * @returns {boolean} True if the turn was successfully set to the player, false if the player was not found.
+     */
+    setTurnToPlayer(playerToSetTurnTo) {
+        // Find the index of the player with the given playerId
+        const playerIndex = this.players.findIndex(player => player.playerId === playerToSetTurnTo.playerId);
+
+        // Check if the player was found
+        if (playerIndex !== -1) {
+            // Set the current turn to the index of the found player
+            this.currentTurnIndex = playerIndex;
+            // Set player's turn to true
+            playerToSetTurnTo.startTurn();
+            // Set every other player's turn to false
+            this.players.forEach((player, index) => {
+                if (index !== playerIndex) {
+                    player.endTurn();
+                }
+            });
+            return true;
+        }
+
+        return false; // Return false if no player with the given ID was found
+    }
+
+    /**
+     * Advances the game turn to the next player in the list.
+     * This function cyclically updates the `currentTurnIndex` to point to the next player in the player array.
+     * If the current player is the last in the list, the turn cycles back to the first player.
+     */
+    advanceTurnToNextPlayer() {
+        this.currentTurnIndex = (this.currentTurnIndex + 1) % this.players.length;
+        // Set turn of player with the new currentTurnIndex
+        this.setTurnToPlayer(this.players[this.currentTurnIndex]);
+    }
+
+    /**
+     * Check if it is the turn of the player flipping the tile.
+     * 
+     * @param {Object} playerId A playerId.
+     * @returns {boolean} True if it is this player's turn, otherwise false.
+     */
+    isItThisPlayersTurn(playerIdToCheck) {
+        const playerToChangeTurnTo = this.getPlayerById(playerIdToCheck)
+        // Find out index of this player in the game's players array.
+        const playerIndex = this.players.findIndex(player => player.playerId === playerIdToCheck);
+        if (playerToChangeTurnTo.turn) {
+            return true;
+        }
+        // The player's turn may not have been updated, so checking the game's turn index.
+        else if (this.currentTurnIndex === playerIndex) {
+            this.setTurnToPlayer(playerToChangeTurnTo);
+            return true;
+        } else {
+            return false;
+        }
+    }
+
+
     /**
      * Creates a signature from a given text by counting the occurrences of each letter.
      * Each letter's count is stored in an object where the key is the letter and the value is the count.
@@ -141,16 +205,21 @@ class Game {
     }
 
     /**
-     * Selects a random letter from the remaining letters that have a count greater than zero.
+     * Selects a random letter from the remaining letters that have a count greater than zero,
+     * with each letter's probability proportional to its count.
      * 
      * @returns {string} A randomly chosen available letter.
      */
     getRandomLetter() {
-        let availableLetters = Object.entries(this.remainingLetters)
-            .filter(([letter, count]) => count > 0)
-            .map(([letter]) => letter);
-        const randomIndex = Math.floor(Math.random() * availableLetters.length);
-        return availableLetters[randomIndex];
+        let weightedLetters = Object.entries(this.remainingLetters)
+            .reduce((acc, [letter, count]) => {
+                for (let i = 0; i < count; i++) {
+                    acc.push(letter);
+                }
+                return acc;
+            }, []);
+        const randomIndex = Math.floor(Math.random() * weightedLetters.length);
+        return weightedLetters[randomIndex];
     }
 
     /**
@@ -191,8 +260,11 @@ class Game {
      * @returns {boolean} Always returns true in this dummy implementation.
      */
     checkWordInDictionary(word) {
-        // We do not have a dictionary API set up yet, so always say "yes".
-        return true;
+        if (wordDictionary[word]) {
+            return true
+        } else if (!wordDictionary[word]) { // Check the API
+            return false;
+        }
     }
 
     /**
@@ -219,6 +291,8 @@ class Game {
      * @param {string} submittedWord - The word submitted by the player.
      * @returns {Array} A list of potential steal options, each being an object detailing the steal opportunity.
      */
+    // If in the middle is "O" and player1 has "ZOO" and player2 has "III", if the player3
+    // submits "ZOOIIIO", they should not be stealing player2's "III" and player1's "ZOO"
     canStealFrom(player, submittedWord) {
         const submittedWordSignature = this.createSignature(submittedWord);
         const possibleWordSignatures = [];
@@ -232,13 +306,12 @@ class Game {
                 }
                 possibleWordSignatures.push(submittedWordAdjustedSignature);
             }
-
         });
 
+        console.log("all possible words from combo of words/middle tiles possibleWordSignatures=", possibleWordSignatures);
         const potentialSteals = [];
         // Check against other players' words
         for (const player of this.players) {
-            // if (otherPlayer !== player) {
             for (let i = 0; i < player.wordSignatures.length; i++) {
                 const playersWordSignature = player.wordSignatures[i];
                 const playersWord = player.words[i];
@@ -255,7 +328,6 @@ class Game {
                     }
                 });
             }
-            // }
         }
 
         return potentialSteals;
@@ -276,7 +348,7 @@ class Game {
 
     /**
      * Calculates which flipped letters are used to form the word to be stolen based on the remaining signature
-     * of the submitted word after attempting to steal. This function now handles flipped letters stored in a Map.
+     * of the submitted word after attempting to steal.
      *
      * @param {string} submittedWord - The word submitted for stealing.
      * @param {string} wordToSteal - The target word to steal.
@@ -346,8 +418,12 @@ class Game {
      * @returns {boolean} True if all letters of the word are represented in the tiles, otherwise false.
      */
     doesWordUseOnlyTilesInGame(word) {
+
         // Extract letters from tile objects
         const tileLetters = this.tiles.map(tile => tile.letter);
+
+
+        // tiles set needs to be created from the letters in the middle
 
         // Create a Set from the tileLetters array for quick lookup
         const tileSet = new Set(tileLetters);
@@ -357,6 +433,7 @@ class Game {
 
         // Check each letter in the word to see if it's in the tiles set
         return wordLetters.every(letter => tileSet.has(letter));
+
     }
 
     /**
@@ -368,6 +445,7 @@ class Game {
      * @param {string} word - The word to steal.
      */
     stealWord(playerThatIsStealing, stealOption, word) {
+        console.log("{stealWord()}...this.flippedLetters =", this.flippedLetters)
         const { playerToStealFrom, wordToSteal, flippedLettersUsed } = stealOption;
         // 1. Remove the word from the 'robbed' player
         const wordIndex = playerToStealFrom.words.indexOf(wordToSteal);
@@ -378,6 +456,7 @@ class Game {
         // 2. Add the word to the stealing player
         playerThatIsStealing.words.push(word);
         playerThatIsStealing.wordSignatures.push(this.createSignature(word)); // Update signatures
+        console.log("{stealWord()}...END of function...this.flippedLetters =", this.flippedLetters)
     }
 
     /**
@@ -504,7 +583,7 @@ class Game {
         if (wordMeetsMinimum) {
             // Check now if the word is even using a letter from the middle
             let wordUsesTileFromMiddle = this.doesWordUseTileFromMiddle(word);
-            // Check now if the word is even using a letter from the middle
+            // Check now if the word is not using a tile that is not even in the game at all.
             let wordIsUsingOnlyTilesInGame = this.doesWordUseOnlyTilesInGame(word);
             if (wordUsesTileFromMiddle && wordIsUsingOnlyTilesInGame) {
                 // Check now if word is in dictionary
@@ -512,14 +591,19 @@ class Game {
                 if (wordIsInDictionary) {
                     // Stealing Logic
                     const potentialSteals = this.canStealFrom(player, word);
+                    console.log("potentialSteals=", potentialSteals);
                     if (potentialSteals.length) {
                         if (potentialSteals.length == 1) {
                             // There is only one option, so steal it!
                             const chosenStealOption = potentialSteals[0];
                             this.stealWord(player, chosenStealOption, word);
+                            console.log("in handleWordSubmission, this.flippedLetters before adjusting them=", this.flippedLetters);
                             this.flippedLetters = this.subtractLetterArrays(this.flippedLetters, chosenStealOption.flippedLettersUsed);
-
+                            console.log("in handleWordSubmission, this.flippedLetters AFTER adjusting them (should be getting rid of:", chosenStealOption.flippedLettersUsed, ")=...", this.flippedLetters);
                             this.unflipTilesForWord(word, this.tiles);
+                            // Since this player STOLE a word, set it to be their turn to flip.
+                            this.setTurnToPlayer(player);
+                            return this;
                         }
                         else if (potentialSteals.length > 1) {
                             // Going to set this but also ignore it, and take the word from whoever has the highest score.
@@ -527,11 +611,11 @@ class Game {
                             console.log("There are multiple options from where to steal the word!")
                             console.log("But going to just take it from the player with the highest score:",)
                             const chosenStealOption = this.findHighestScoringSteal(potentialSteals);
-
                             this.stealWord(player, chosenStealOption, word);
                             this.flippedLetters = this.subtractLetterArrays(this.flippedLetters, chosenStealOption.flippedLettersUsed);
-
                             this.unflipTilesForWord(word, this.tiles);
+                            // Since this player STOLE a word, set it to be their turn to flip.
+                            this.setTurnToPlayer(player);
                             return this;
                         }
                         return this;
@@ -544,6 +628,8 @@ class Game {
                             player.attributeWord(word);
                             this.flippedLetters = this.subtractLetterArrays(this.flippedLetters, word.split(''));
                             this.unflipTilesForWord(word, this.tiles);
+                            // Since this player created a new word, set it to be their turn to flip.
+                            this.setTurnToPlayer(player);
                             return this;
                         } else {
                             console.log("Word is neither a steal nor the word be made from the letters in the middle.");
@@ -571,7 +657,7 @@ class Game {
             // Check now if word is in dictionary
         } else {
             // Word does not meet minimum length
-            console.log(`Word does NOT meet minimum length: ${this.minimumLength}.`);
+            console.log(`Word does NOT meet minimum length: ${this.minimumWordLength}.`);
             // Create Error class for custom game/word errors.
             throw new Error(
                 `❌ Word does NOT meet minimum length: ${this.minimumWordLength}.`

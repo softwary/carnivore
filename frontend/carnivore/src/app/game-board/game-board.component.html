@@ -2,6 +2,10 @@
   <mat-card-content>
     <h2>Game ID: {{ game.gameId }}</h2>
     <p>Number of Players: {{ game.players.length }}</p>
+    <p>Minimum word length: {{ game.minimumWordLength }}</p>
+    <p>It is {{ playerWhoseTurnItIs }}'s turn!</p>
+    <p> </p>
+    <p>On desktop? Hit ctrl/cmnd + enter to flip a tile with your keyboard.</p>
 
     <div class="game-board">
       <ng-container *ngFor="let tile of tiles">

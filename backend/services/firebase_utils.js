@@ -96,7 +96,12 @@ async function writeGameData(game) {
       await writePlayerData(player);
     });
   }
-
+  // Minimum Word Length
+  updates[`games/${game.gameId}/minimumWordLength`] = game.minimumWordLength;
+  // Remaining Letters and Tiles
+  updates[`games/${game.gameId}/remainingLetters`] = game.remainingLetters;
+  // Tiles
+  updates[`games/${game.gameId}/tiles`] = game.tiles;
   // Convert flippedLetters Map to an object correctly
   const flippedLettersObject = {};
   if (game.flippedLetters instanceof Map) {
@@ -105,11 +110,10 @@ async function writeGameData(game) {
     });
   }
   updates[`games/${game.gameId}/flippedLetters`] = flippedLettersObject;
-
-  // Remaining Letters and Tiles
-  updates[`games/${game.gameId}/remainingLetters`] = game.remainingLetters;
-  // Tiles
-  updates[`games/${game.gameId}/tiles`] = game.tiles;
+  // Potential Steals
+  updates[`games/${game.gameId}/potentialSteals`] = game.potentialSteals;
+  // Current Turn Index
+  updates[`games/${game.gameId}/currentTurnIndex`] = game.currentTurnIndex;
 
   await admin
     .database()
@@ -282,7 +286,12 @@ async function getGame(gameId) {
   const firebaseGame = firebaseGamePull.val();
   const gameObj = new Game();
   gameObj.gameId = gameId;
+  let playerObjs = createPlayersFromFirebaseData(firebaseGame.players);
+  gameObj.players = playerObjs;
+  gameObj.minimumWordLength = firebaseGame.minimumWordLength;
   gameObj.remainingLetters = firebaseGame.remainingLetters;
+  let tileObjs = createTilesFromFirebaseData(firebaseGame.tiles);
+  gameObj.tiles = tileObjs;
   // Correcting the way flippedLetters are reconstituted from Firebase
   if (firebaseGame.flippedLetters) {
     gameObj.flippedLetters = new Map();
@@ -292,11 +301,8 @@ async function getGame(gameId) {
   } else {
     gameObj.flippedLetters = new Map(); // Ensure flippedLetters is always a Map even if empty
   }
-  let tileObjs = createTilesFromFirebaseData(firebaseGame.tiles);
-  gameObj.tiles = tileObjs;
-  let playerObjs = createPlayersFromFirebaseData(firebaseGame.players);
-  gameObj.players = playerObjs;
-
+  gameObj.potentialSteals = firebaseGame.potentialSteals || [];
+  gameObj.currentTurnIndex = firebaseGame.currentTurnIndex;  
   return gameObj;
 }
 

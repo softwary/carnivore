@@ -16,6 +16,8 @@ export interface Game {
     input: string;
     timer: any; // Adjust based on your Timer model
     minimumWordLength: number;
+    potentialSteals: string[];
+    currentTurnIndex: number;
 }
 
 export interface Player {

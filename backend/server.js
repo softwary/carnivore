@@ -28,17 +28,13 @@ const gamePlayerWebSockets = new Map();
  * - Logs the message type being broadcasted to help with debugging and monitoring.
  */
 function broadcastMessageToPlayers(gameId, message) {
-  // console.log("📤 broadcasted this message:", message);
   if (gamePlayerWebSockets.has(gameId)) {
     const playersWebSockets = gamePlayerWebSockets.get(gameId);
     playersWebSockets.forEach((ws) => {
       if (ws.readyState === WebSocket.OPEN) {
         // Check if the WebSocket is still open
         ws.send(JSON.stringify(message));
-        console.log("📤 broadcasted message to all players", message.type);
-        if (message.type == "tileUpdate") {
-          // console.log("📤  SENT THIS GAME for updating a Tile! JSON.stringify(message)...=", JSON.stringify(message));
-        }
+        console.log("📤 Broadcasted message to all players", message.type);
       }
     });
   }
@@ -115,6 +111,8 @@ wss.on("connection", (ws, req) => {
             let newPlayer = new Player(userId, newGame.gameId);
             // Add the first player to the gamer(newPlayer);
             newGame.addPlayer(newPlayer);
+            // Make it this player's turn
+            newGame.setTurnToPlayer(newPlayer);
             await firebaseUtils.writeGameData(newGame);
             // Add WebSocket to the map
             if (!gamePlayerWebSockets.has(newGame.gameId)) {
@@ -170,44 +168,48 @@ wss.on("connection", (ws, req) => {
           case "flipTile":
             let flipTileGameId = data.gameId;
             if (flipTileGameId) {
-              try {
-                const gameToUpdateTileIn = await firebaseUtils.getGame(flipTileGameId);
-
-                if (!gameToUpdateTileIn) {
-                  throw new Error(`❌ Game with ID ${flipTileGameId} does not exist.`);
-                }
-                const tileToUpdate = gameToUpdateTileIn.flipTile();
-                if (!tileToUpdate) {
-                  throw new Error(
-                    `❌ Tile ${tileToUpdate.tileId} is invalid. tile=${tileToUpdate}`
-                  );
-                }
-                await firebaseUtils.updateTile(
-                  flipTileGameId,
-                  tileToUpdate
-                );
-                await firebaseUtils.updateFlippedLetters(
-                  flipTileGameId,
-                  tileToUpdate
-                );
-                await firebaseUtils.updateRemainingLetters(flipTileGameId, gameToUpdateTileIn.remainingLetters);
-                await firebaseUtils.writeGameData(gameToUpdateTileIn);
-                const gameWithUpdatedTile = await firebaseUtils.getGame(flipTileGameId); // 5. Send Success Response to Client
-                gameWithUpdatedTile.flippedLetters = prepareFlippedLettersForFrontEnd(gameWithUpdatedTile.flippedLetters);
-                const tileUpdateMessage = {
-                  type: "tileUpdate",
-                  data: gameWithUpdatedTile,
-                }
-                broadcastMessageToPlayers(flipTileGameId, tileUpdateMessage);
-              } catch (error) {
-                console.error(`❌ Error flipping tile: ${error.message}`);
-                ws.send(JSON.stringify({ type: "error", data: error.message }));
+              const gameToUpdateTileIn = await firebaseUtils.getGame(flipTileGameId);
+              if (!gameToUpdateTileIn) {
+                throw new Error(`❌ Game with ID ${flipTileGameId} does not exist.`);
               }
-            } else {
-              throw new Error(
-                `❌ gameId was not passed when trying to flip the tile!.`
-              );
 
+              // Check if it is this player's turn
+              else if (gameToUpdateTileIn.isItThisPlayersTurn(userId)) {
+                try {
+                  const tileToUpdate = gameToUpdateTileIn.flipTile();
+                  // Make it the next player's turn
+                  gameToUpdateTileIn.advanceTurnToNextPlayer();
+                  if (!tileToUpdate) {
+                    throw new Error(
+                      `❌ Tile ${tileToUpdate.tileId} is invalid. tile=${tileToUpdate}`
+                    );
+                  }
+                  await firebaseUtils.updateTile(
+                    flipTileGameId,
+                    tileToUpdate
+                  );
+                  await firebaseUtils.updateFlippedLetters(
+                    flipTileGameId,
+                    tileToUpdate
+                  );
+                  await firebaseUtils.updateRemainingLetters(flipTileGameId, gameToUpdateTileIn.remainingLetters);
+                  await firebaseUtils.writeGameData(gameToUpdateTileIn);
+                  const gameWithUpdatedTile = await firebaseUtils.getGame(flipTileGameId);
+                  gameWithUpdatedTile.flippedLetters = prepareFlippedLettersForFrontEnd(gameWithUpdatedTile.flippedLetters);
+                  const tileUpdateMessage = {
+                    type: "tileUpdate",
+                    data: gameWithUpdatedTile,
+                  }
+                  broadcastMessageToPlayers(flipTileGameId, tileUpdateMessage);
+                } catch (error) {
+                  console.error(`❌ Error flipping tile: ${error.message}`);
+                  ws.send(JSON.stringify({ type: "error", data: error.message }));
+                }
+              } else {
+                throw new Error(
+                  `❌ it is not this player's turn, so they cannot flip a tile!`
+                )
+              }
             }
             break;
           case "submitWord":
@@ -234,7 +236,6 @@ wss.on("connection", (ws, req) => {
                 `❌ Player with ID ${userId} does not exist.`
               );
             }
-
 
             let gameWithWordSubmitted = gameToSubmitWord.handleWordSubmission(
               playerThatSubmittedWord,
