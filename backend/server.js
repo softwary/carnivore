@@ -267,7 +267,6 @@ wss.on("connection", (ws, req) => {
     } catch (error) {
       console.error("❌ Authentication or message processing failed:", error);
       ws.send(JSON.stringify({ type: "error", data: "Authentication error" }));
-      // You might consider terminating the connection here: ws.terminate();
     }
   });
 });
