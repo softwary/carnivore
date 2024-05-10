@@ -1,6 +1,4 @@
 FROM node:14
-WORKDIR /app 
-
 # Copy the package files first
 COPY package*.json ./ 
 
