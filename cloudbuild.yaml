@@ -1,0 +1,11 @@
+steps:
+  # Build the Docker image
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['build', '-t', 'gcr.io/carnivore-5397b/carnivore-backend', '.']
+  # Push the Docker image to Container Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', 'gcr.io/carnivore-5397b/carnivore-backend']
+  # Deploy to Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk' 
+    entrypoint: 'gcloud'
+    args: ['run', 'deploy', 'carnivore-backend', '--image', 'gcr.io/carnivore-5397b/carnivore-backend', '--region', 'us-central1', '--platform', 'managed', '--allow-unauthenticated'] 
