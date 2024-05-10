@@ -1,7 +1,4 @@
 steps:
-- name: 'bash'
-  args: ['ls', '-la']  # List all files in build context
-  dir: '.'  
 - name: 'gcr.io/cloud-builders/docker'
   args: ['build', '-t', 'gcr.io/carnivore-5397b/carnivore-backend', '.']
   dir: 'backend'
@@ -10,5 +7,3 @@ steps:
 - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
   entrypoint: 'gcloud'
   args: ['run', 'deploy', 'carnivore-backend', '--image', 'gcr.io/carnivore-5397b/carnivore-backend', '--region', 'us-central1', '--platform', 'managed', '--allow-unauthenticated']
-  options:
-    logging: CLOUD_LOGGING_ONLY 
