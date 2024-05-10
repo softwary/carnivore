@@ -2,6 +2,7 @@ steps:
   # Build the Docker image
   - name: 'gcr.io/cloud-builders/docker'
     args: ['build', '-t', 'gcr.io/carnivore-5397b/carnivore-backend', '.']
+    dir: 'backend'
   # Push the Docker image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
     args: ['push', 'gcr.io/carnivore-5397b/carnivore-backend']
