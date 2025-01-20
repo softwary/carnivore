@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CLIENT_ID</key>
+	<string>133326456900-nbbv8h2mq14iq9r1nq7dt29u24hvca6n.apps.googleusercontent.com</string>
+	<key>REVERSED_CLIENT_ID</key>
+	<string>com.googleusercontent.apps.133326456900-nbbv8h2mq14iq9r1nq7dt29u24hvca6n</string>
+	<key>API_KEY</key>
+	<string>AIzaSyABNOz0qILsAKWXL7NzIyKcGfbdgGBNp-A</string>
+	<key>GCM_SENDER_ID</key>
+	<string>133326456900</string>
+	<key>PLIST_VERSION</key>
+	<string>1</string>
+	<key>BUNDLE_ID</key>
+	<string>com.example.flutterFrontend</string>
+	<key>PROJECT_ID</key>
+	<string>carnivore-5397b</string>
+	<key>STORAGE_BUCKET</key>
+	<string>carnivore-5397b.firebasestorage.app</string>
+	<key>IS_ADS_ENABLED</key>
+	<false></false>
+	<key>IS_ANALYTICS_ENABLED</key>
+	<false></false>
+	<key>IS_APPINVITE_ENABLED</key>
+	<true></true>
+	<key>IS_GCM_ENABLED</key>
+	<true></true>
+	<key>IS_SIGNIN_ENABLED</key>
+	<true></true>
+	<key>GOOGLE_APP_ID</key>
+	<string>1:133326456900:ios:1cab0e24aef091fc5f5411</string>
+	<key>DATABASE_URL</key>
+	<string>https://carnivore-5397b-default-rtdb.firebaseio.com</string>
+</dict>
+</plist>

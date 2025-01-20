@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "133326456900",
+    "firebase_url": "https://carnivore-5397b-default-rtdb.firebaseio.com",
+    "project_id": "carnivore-5397b",
+    "storage_bucket": "carnivore-5397b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:133326456900:android:3ffd7802f187b7a55f5411",
+        "android_client_info": {
+          "package_name": "com.example.flutter_frontend"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "133326456900-lr78e4hjq0tg6c33fbapaueqi19vltff.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC2kH98ki-cN-7OdcqLaug2gP0OKwUcKBc"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "133326456900-lr78e4hjq0tg6c33fbapaueqi19vltff.apps.googleusercontent.com",
+              "client_type": 3
+            },
+            {
+              "client_id": "133326456900-nbbv8h2mq14iq9r1nq7dt29u24hvca6n.apps.googleusercontent.com",
+              "client_type": 2,
+              "ios_info": {
+                "bundle_id": "com.example.flutterFrontend"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
