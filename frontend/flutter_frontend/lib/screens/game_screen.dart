@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
+import 'package:flutter_frontend/widgets/horizontal_reorderable_list_view.dart';
 import 'package:http/http.dart' as http;
 
 class GameScreen extends StatefulWidget {
@@ -13,9 +14,65 @@ class GameScreen extends StatefulWidget {
   GameScreenState createState() => GameScreenState();
 }
 
+class SelectedLetterTile extends StatelessWidget {
+  final String letter;
+
+  const SelectedLetterTile({
+    super.key,
+    required this.letter,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(8.0),
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surface,
+        borderRadius: BorderRadius.circular(8.0),
+      ),
+      child: Center(
+        child: Text(
+          letter,
+          textAlign: TextAlign.center,
+          style: Theme.of(context).textTheme.titleMedium!.copyWith(
+                fontSize: 18,
+              ),
+        ),
+      ),
+    );
+  }
+}
+
 class GameScreenState extends State<GameScreen> {
   late DatabaseReference gameRef;
   Map<String, dynamic>? gameData;
+  List<Map<String, String>> selectedTiles = []; // List of Maps
+  List<Map<String, String>> orderedTiles = []; // for submitting words
+
+  void _handleReorderFinished(List<Map<String, String>> newOrder) {
+    setState(() {
+      orderedTiles = newOrder;
+      print("New Order: $orderedTiles");
+    });
+  }
+
+  void handleTileSelection(String letter, String tileId, bool isSelected) {
+    print(
+        "handleTileSelection called with letter: $letter, tileId: $tileId, isSelected: $isSelected");
+    setState(() {
+      final tileData = {'letter': letter, 'tileId': tileId};
+      if (isSelected) {
+        if (!selectedTiles.any((tile) => tile['tileId'] == tileId)) {
+          print(
+              "This tile was not in here, adding this tile ($letter) to selectedTiles");
+          selectedTiles.add(tileData);
+        }
+      } else {
+        selectedTiles.removeWhere((tile) => tile['tileId'] == tileId);
+      }
+      print("Selected Tiles: $selectedTiles");
+    });
+  }
 
   @override
   void initState() {
@@ -71,10 +128,6 @@ class GameScreenState extends State<GameScreen> {
     }
   }
 
-  Future<void> handleClickTile(String tileId) async {
-    print("handleClickTile was clicked for tileId: $tileId");
-  }
-
   @override
   Widget build(BuildContext context) {
     ThemeData theme = Theme.of(context);
@@ -110,7 +163,6 @@ class GameScreenState extends State<GameScreen> {
                     style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
                   const SizedBox(height: 10),
-
                   Expanded(
                     child: GridView.builder(
                       gridDelegate:
@@ -144,18 +196,36 @@ class GameScreenState extends State<GameScreen> {
 
                         final tile = tiles[index] as Map<dynamic, dynamic>?;
                         final letter = tile?['letter'] as String? ?? "";
-                        final id = tile?['id']?.toString() ?? "";
+                        final tileId = tile?['tileId']?.toString() ?? "";
 
                         return Padding(
                           padding: const EdgeInsets.all(4.0),
                           child: TileWidget(
                             letter: letter,
-                            tileId: id,
-                            onClickTile: handleClickTile,
+                            tileId: tileId,
+                            onClickTile: (selectedLetter, tileId, isSelected) {
+                              setState(() {
+                                handleTileSelection(
+                                    selectedLetter, tileId, isSelected);
+                              });
+                            },
+                            isSelected: false,
                           ),
                         );
                       },
                     ),
+                  ),
+                  Text(
+                    "Selected Items:",
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
+                  ),
+                  HorizontalReorderableListView(
+                    items: selectedTiles,
+                    itemBuilder: (tile) {
+                      return SelectedLetterTile(
+                          letter: tile['letter']!); // Build your widget here
+                    },
+                    onReorderFinished: _handleReorderFinished,
                   ),
                 ],
               ),

@@ -48,7 +48,6 @@ Future<void> joinGame(BuildContext context, String gameId) async {
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
 
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -102,11 +101,10 @@ class MyHomePage extends StatefulWidget {
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _gameIdController = TextEditingController();
   final FocusNode _focusNode = FocusNode();
-
   @override
   void initState() {
     super.initState();
-    _gameIdController.text = '2834'; 
+    _gameIdController.text = '2834';
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _focusNode.requestFocus();
     });
@@ -151,21 +149,20 @@ class _MyHomePageState extends State<MyHomePage> {
                   width: MediaQuery.of(context).size.width /
                       2, // Half the screen width
                   child: TextField(
-                    controller: _gameIdController,
-                    focusNode: _focusNode,
-                    decoration: const InputDecoration(
-                      labelText: 'Enter Game ID',
-                      labelStyle: TextStyle(color: Colors.white),
-                      enabledBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white),
+                      controller: _gameIdController,
+                      focusNode: _focusNode,
+                      decoration: const InputDecoration(
+                        labelText: 'Enter Game ID',
+                        labelStyle: TextStyle(color: Colors.white),
+                        enabledBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderSide: BorderSide(color: Colors.white),
+                        ),
                       ),
-                      focusedBorder: OutlineInputBorder(
-                        borderSide: BorderSide(color: Colors.white),
-                      ),
-                    ),
-                    style: const TextStyle(color: Colors.white),
-                    onSubmitted: (value) => joinGame(context, value)
-                  ),
+                      style: const TextStyle(color: Colors.white),
+                      onSubmitted: (value) => joinGame(context, value)),
                 ),
               ],
             ),
