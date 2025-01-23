@@ -25,7 +25,8 @@ class SelectedLetterTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(20.0),
+      
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(8.0),
@@ -148,13 +149,13 @@ class GameScreenState extends State<GameScreen> {
                   // Player Ids
                   Text(
                     "Player IDs:",
-                    style: const TextStyle(fontSize: 16, color: Colors.white),
+                    style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 5),
                   Text(
                     gameData?['players']?.keys.join(', ') ??
                         'No players', // Added comma separation
-                    style: const TextStyle(fontSize: 14, color: Colors.white),
+                    style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 10),
                   // Tiles
@@ -162,7 +163,7 @@ class GameScreenState extends State<GameScreen> {
                     gameData?['tiles'] != null ? "Tiles:" : "",
                     style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 5),
                   Expanded(
                     child: GridView.builder(
                       gridDelegate:

@@ -54,7 +54,7 @@ class _HorizontalReorderableListViewState
         children: _items.map((item) {
           return SizedBox(
             key: ValueKey(item['tileId']),
-            width: 100,
+            width: 50,
             child: widget.itemBuilder(item),
           );
         }).toList(),

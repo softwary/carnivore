@@ -48,7 +48,7 @@ class _TileWidgetState extends State<TileWidget> {
             widget.letter, widget.tileId, _isSelected); // Pass tileId as well
       },
       child: Container(
-        padding: const EdgeInsets.all(8.0),
+        padding: const EdgeInsets.all(4.0),
         decoration: BoxDecoration(
           color: theme.colorScheme.surface,
           borderRadius: BorderRadius.circular(8.0),
