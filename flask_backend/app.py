@@ -46,6 +46,7 @@ def verify_firebase_token(f):
 
             user_id = idinfo['sub']
             request.user_id = user_id
+            # Should this code just return if user_id is null?
 
         except ValueError as e:
             logger.error(f"ValueError during token verification: {e}")
@@ -79,7 +80,7 @@ def submit_word():
     print("submit_word() called")
     print("request.data=", request.data)
     data = request.get_json(force=True, silent=False)
-    user_id = request.user_id  # Get user ID from the verified token
+    user_id = request.user_id
     print("submit_word() user_id (expecting a persistent user id here for google logged in users)= ", user_id)
     if not data:
         return jsonify({"error": "Missing data in request"}), 400
@@ -118,13 +119,54 @@ def submit_word():
     
 
     try:
-        game_service.submit_valid_word(game_id, tiles)
+        game_service.submit_valid_word(user_id, game_id, tiles)
         return jsonify({"success": True, "message": "Word  submitted successfully"}), 200
 
     except Exception as e:
         print("Error processing request:", str(e))
         return jsonify({"error": str(e)}), 500  # Use 500 for server errors
 
+@app.route('/join-game', methods=['POST'])
+@verify_firebase_token
+def join_game():
+    print("join_game() called")
+    print("request.data=",request.data) 
+    print("join_game() called")
+    print("request.data=", request.data.decode("utf-8"))  # Decode to string for debugging
+    user_id = request.user_id  # Get user ID from the verified token
+    print("join_game() user_id (expecting a persistent user id here for google logged in users)= ", user_id)
+    try:
+
+        data = request.get_json(force=True, silent=False)
+        print("Parsed JSON data:", data)
+
+        if not data or 'game_id' not in data:
+            return jsonify({"error": "Missing game_id"}), 400
+
+        game_id = data['game_id']
+
+
+        game_ref = ref.child('games').child(game_id)
+        game_data = game_ref.get()
+        def update_players(current_data):
+            if current_data is None:  # Game doesn't exist, create it with players
+                current_data = {'players': {}}
+            
+            players = current_data.get('players', {})
+            if user_id not in players:
+                players[user_id] = {'gameId': game_id, 'score': 0, 'turn': False, 'wordSignatures': [], 'words': []}
+            
+            current_data['players'] = players
+            return current_data  # Return the entire updated game data
+
+        game_ref.transaction(update_players)
+
+        return jsonify({"success": True, "gameId": game_id}), 200
+
+    except Exception as e:
+        print("Error processing request:", str(e))
+        return jsonify({"error": str(e)}), 500
+        
 # TODO: Implement this function
 # @app.route('/flip-tile', methods=['POST'])
 # def flip_tile():
