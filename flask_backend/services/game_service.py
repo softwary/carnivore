@@ -1,4 +1,5 @@
 import random
+from .firebase_service import get_game, update_game
 
 def flip_tile(game_data):
     """Flips a random tile that is not flipped and assigns a random letter.
@@ -40,3 +41,40 @@ def flip_tile(game_data):
         return True, game_data
     
     return False, game_data
+
+def submit_valid_word(game_id, tiles):
+    """Submits a valid word for the game.
+
+    Args:
+        game_id (str): The game ID.
+        tiles (list): List of tiles forming the word.
+
+    Returns:
+        tuple: (bool, dict) indicating whether the word was submitted successfully, and the new game state.
+    """
+    game_data = get_game(game_id)
+    if not game_data:
+        print(f"Game with ID {game_id} does not exist.")
+        return False, game_data
+    
+    # Update game state
+    word = ''.join(tile['letter'] for tile in tiles if tile['letter'])
+
+    # Put the word in a user's list of words
+    # Remove the tileIds of the submitted word from the 
+    # game_data['words'].append(word)
+    # return True, game_data
+
+
+def is_game_over(game_id):
+    """Checks if a game is over."""
+    game_data = get_game(game_id)
+    if not game_data:
+        return True
+    #TODO: Implement game over logic
+    # Game is over in any of these conditions: 
+    # - All tiles are assigned a letter, yet there are 0 letters.inMiddle=True
+    # - All tiles are assigned a letter, and no annagram of letters.inMiddle=True + players' words can create a new valid word
+    # This is some complex logic that will need to be figured out honestly...
+    # Will return false for now!
+    return False
