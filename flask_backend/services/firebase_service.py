@@ -8,4 +8,4 @@ def get_game(game_id):
 
 def update_game(game_id, game_data):
     """Updates a game's data in Firebase."""
-    db.reference(f'games/{game_id}').update(game_data)
+    db.reference(f'games/{game_id}').set(game_data)

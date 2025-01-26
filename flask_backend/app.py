@@ -119,11 +119,12 @@ def submit_word():
     
 
     try:
+        print("in submit_word() calling game_service.submit_valid_word()")
         game_service.submit_valid_word(user_id, game_id, tiles)
         return jsonify({"success": True, "message": "Word  submitted successfully"}), 200
 
     except Exception as e:
-        print("Error processing request:", str(e))
+        print("in submit_word() Error processing request:", str(e))
         return jsonify({"error": str(e)}), 500  # Use 500 for server errors
 
 @app.route('/join-game', methods=['POST'])
@@ -166,7 +167,7 @@ def join_game():
     except Exception as e:
         print("Error processing request:", str(e))
         return jsonify({"error": str(e)}), 500
-        
+
 # TODO: Implement this function
 # @app.route('/flip-tile', methods=['POST'])
 # def flip_tile():

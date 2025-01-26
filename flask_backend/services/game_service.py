@@ -1,5 +1,7 @@
 import random
+import uuid
 from .firebase_service import get_game, update_game
+from .tile_service import update_tiles_location
 
 def flip_tile(game_data):
     """Flips a random tile that is not flipped and assigns a random letter.
@@ -42,7 +44,7 @@ def flip_tile(game_data):
     
     return False, game_data
 
-def submit_valid_word(game_id, tiles):
+def submit_valid_word(user_id, game_id, tiles):
     """Submits a valid word for the game.
 
     Args:
@@ -59,11 +61,61 @@ def submit_valid_word(game_id, tiles):
     
     # Update game state
     word = ''.join(tile['letter'] for tile in tiles if tile['letter'])
+    print("in game_service.submit_valid_word() word = ", word)
+    
+    # Add the word to the game's list of words
+    if 'words' not in game_data:
+        game_data['words'] = []
+    word_id = str(uuid.uuid4())
+    game_data['words'].append({'wordId': word_id, 'word': word, 'user_id': user_id, 'tileIds': [tile['tileId'] for tile in tiles]})
+    update_game(game_id, game_data)
+    # Update the tiles' location property to be the wordId
+    update_tiles_location(game_id, tiles, word_id)
+    
+    # Remove the used letters from the game
+    remove_used_tiles(game_id, tiles)
+    
+    # Update the game in the database
+    # update_game(game_id, game_data)
 
-    # Put the word in a user's list of words
-    # Remove the tileIds of the submitted word from the 
-    # game_data['words'].append(word)
-    # return True, game_data
+    # TODO: Make this into a separate function in player_service.py
+    # Update the player's words and score in the database
+    # player_ref = game_ref.child('players').child(user_id)
+    # player_ref.child('score').set(
+    #     firebase_admin.db.firestore.Increment(len(word)))  # Assuming score is based on word length
+    # TODO: Make this into a separate function in player_service.py
+    # Update user's game history (in the "users" collection)
+    # user_ref = ref.child('users').child(user_id)
+    # user_ref.child('gamesPlayed').child(game_id).set({
+    #     'won': False,  # You'll need to determine this based on game logic
+    #     'score': game_data['players'][user_id]['score'] + len(word)
+    # })
+    
+    return True, game_data
+
+def remove_used_tiles(game_id, tiles):
+    """Removes the used letters from the remaining letters in the game.
+
+    Args:
+        game_id (str): The game ID.
+        tiles (list): List of tiles forming the word.
+    """
+    game_data = get_game(game_id)
+    if not game_data:
+        print(f"Game with ID {game_id} does not exist.")
+        return
+    
+    remaining_letters = game_data.get('remainingLetters', {})
+    for tile in tiles:
+        letter = tile['letter']
+        if letter in remaining_letters and remaining_letters[letter] > 0:
+            remaining_letters[letter] -= 1
+            if remaining_letters[letter] == 0:
+                del remaining_letters[letter]
+    
+    game_data['remainingLetters'] = remaining_letters
+    update_game(game_id, game_data)
+
 
 
 def is_game_over(game_id):
