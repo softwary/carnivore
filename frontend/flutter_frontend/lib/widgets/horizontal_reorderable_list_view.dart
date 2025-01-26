@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 class HorizontalReorderableListView extends StatefulWidget {
   final List<Map<String, String>> items;
   final Widget Function(Map<String, String>) itemBuilder;
-  final Function(List<Map<String, String>>) onReorderFinished; // Callback function
+  final Function(List<int>) onReorderFinished; // Callback function
 
   const HorizontalReorderableListView({
     super.key,
@@ -48,7 +48,12 @@ class _HorizontalReorderableListViewState
             }
             final Map<String, String> item = _items.removeAt(oldIndex);
             _items.insert(newIndex, item);
-            widget.onReorderFinished(_items); // Call the callback here
+
+            // Extract tileIds before calling the callback
+            final List<int> tileIds =
+                _items.map((item) => int.parse(item['tileId']!)).toList();
+            widget.onReorderFinished(tileIds); // Pass only tileIds
+            print("onReorderFinished tileIds= $tileIds");
           });
         },
         children: _items.map((item) {
@@ -62,4 +67,3 @@ class _HorizontalReorderableListViewState
     );
   }
 }
-

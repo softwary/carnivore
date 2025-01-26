@@ -1,3 +1,5 @@
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
@@ -26,7 +28,6 @@ class SelectedLetterTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       padding: const EdgeInsets.all(20.0),
-      
       decoration: BoxDecoration(
         color: Theme.of(context).colorScheme.surface,
         borderRadius: BorderRadius.circular(8.0),
@@ -47,13 +48,16 @@ class SelectedLetterTile extends StatelessWidget {
 class GameScreenState extends State<GameScreen> {
   late DatabaseReference gameRef;
   Map<String, dynamic>? gameData;
-  List<Map<String, String>> selectedTiles = []; // List of Maps
-  List<Map<String, String>> orderedTiles = []; // for submitting words
+  List<Map<String, String>> selectedTiles =
+      []; // List of Maps for showing which tiles are selected
+  List<int> orderedTiles = []; // for submitting words
 
-  void _handleReorderFinished(List<Map<String, String>> newOrder) {
+  void _handleReorderFinished(List<int> newTileIds) {
     setState(() {
-      orderedTiles = newOrder;
-      print("New Order: $orderedTiles");
+      print("@@ Received reordered tileIds: $newTileIds");
+      orderedTiles =
+          newTileIds; // Update orderedTiles with the new order when tiles are rearranged
+      print("@@ Updated orderedTiles: $orderedTiles");
     });
   }
 
@@ -70,6 +74,10 @@ class GameScreenState extends State<GameScreen> {
         }
       } else {
         selectedTiles.removeWhere((tile) => tile['tileId'] == tileId);
+      }
+      if (selectedTiles.isNotEmpty) {
+        _handleReorderFinished(
+            selectedTiles.map((tile) => int.parse(tile['tileId']!)).toList());
       }
       print("Selected Tiles: $selectedTiles");
     });
@@ -100,6 +108,42 @@ class GameScreenState extends State<GameScreen> {
     }, onError: (error) {
       print('Error fetching data: $error');
     });
+  }
+
+  Future<void> _sendTileIds() async {
+    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
+    final url = Uri.parse('http://192.168.1.218:4000/submit-word');
+    print("Sending tileIds: $orderedTiles");
+    final Map<String, dynamic> payload = {
+      'gameId': widget.gameId,
+      'tileIds': orderedTiles,
+    };
+    print("Payload: $payload");
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token'
+        },
+        body: jsonEncode(payload),
+      );
+
+      if (response.statusCode == 200) {
+        final Map<String, dynamic> responseData = jsonDecode(response.body);
+        setState(() {
+          print("Response Data: $responseData");
+        });
+        selectedTiles.clear();
+        orderedTiles.clear();
+      } else {
+        print(
+            'Error sending tileIds: ${response.statusCode} - ${response.body}');
+      }
+    } catch (e) {
+      print('Error sending tileIds: $e');
+    }
   }
 
   Future<void> _flipNewTile() async {
@@ -149,13 +193,19 @@ class GameScreenState extends State<GameScreen> {
                   // Player Ids
                   Text(
                     "Player IDs:",
-                    style: const TextStyle(fontSize: 16, color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 16,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 5),
                   Text(
                     gameData?['players']?.keys.join(', ') ??
                         'No players', // Added comma separation
-                    style: const TextStyle(fontSize: 14, color: Colors.white, fontWeight: FontWeight.bold),
+                    style: const TextStyle(
+                        fontSize: 14,
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 10),
                   // Tiles
@@ -177,7 +227,7 @@ class GameScreenState extends State<GameScreen> {
                               ?.where((tile) =>
                                   tile != null &&
                                   tile is Map &&
-                                  tile['inMiddle'] == true &&
+                                  tile['location'] == 'middle' &&
                                   (tile['letter'] as String?)?.isNotEmpty ==
                                       true)
                               .length ??
@@ -187,7 +237,7 @@ class GameScreenState extends State<GameScreen> {
                             ?.where((tile) =>
                                 tile != null &&
                                 tile is Map &&
-                                tile['inMiddle'] == true &&
+                                tile['location'] == 'middle' &&
                                 (tile['letter'] as String?)?.isNotEmpty == true)
                             .toList();
 
@@ -198,7 +248,7 @@ class GameScreenState extends State<GameScreen> {
                         final tile = tiles[index] as Map<dynamic, dynamic>?;
                         final letter = tile?['letter'] as String? ?? "";
                         final tileId = tile?['tileId']?.toString() ?? "";
-
+                        print("gameData?['tiles']: $gameData?['tiles']");
                         return Padding(
                           padding: const EdgeInsets.all(4.0),
                           child: TileWidget(
@@ -223,8 +273,7 @@ class GameScreenState extends State<GameScreen> {
                   HorizontalReorderableListView(
                     items: selectedTiles,
                     itemBuilder: (tile) {
-                      return SelectedLetterTile(
-                          letter: tile['letter']!); // Build your widget here
+                      return SelectedLetterTile(letter: tile['letter']!);
                     },
                     onReorderFinished: _handleReorderFinished,
                   ),
@@ -234,9 +283,11 @@ class GameScreenState extends State<GameScreen> {
       floatingActionButton: FloatingActionButton(
         onPressed: () {
           // Logic for flipping a new tile (call your Flask endpoint)
-          _flipNewTile();
+          // _flipNewTile();
+          // TODO: Create flipTile logic
+          _sendTileIds();
         },
-        child: const Icon(Icons.refresh_rounded),
+        child: const Icon(Icons.send_rounded),
       ),
       backgroundColor: Colors.black,
     );
