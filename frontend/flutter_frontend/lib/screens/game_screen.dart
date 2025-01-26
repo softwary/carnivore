@@ -79,7 +79,7 @@ class GameScreenState extends State<GameScreen> {
         _handleReorderFinished(
             selectedTiles.map((tile) => int.parse(tile['tileId']!)).toList());
       }
-      print("Selected Tiles: $selectedTiles");
+      print("My Tiles: $selectedTiles");
     });
   }
 
@@ -199,15 +199,69 @@ class GameScreenState extends State<GameScreen> {
                         fontWeight: FontWeight.bold),
                   ),
                   const SizedBox(height: 5),
-                  Text(
-                    gameData?['players']?.keys.join(', ') ??
-                        'No players', // Added comma separation
+                    Text(
+                    gameData?['players']?.entries
+                      .map((entry) => '${entry.key} (${entry.value['score']})')
+                      .join(', ') ??
+                      'No players',
                     style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold),
-                  ),
+                      fontSize: 14,
+                      color: Colors.white,
+                      fontWeight: FontWeight.bold),
+                    ),
                   const SizedBox(height: 10),
+                  // Player Words
+                  const SizedBox(height: 5),
+                  Expanded(
+                    child: ListView.builder(
+                      itemCount: gameData?['words']?.length ?? 0,
+                      itemBuilder: (context, index) {
+                        final words = gameData?['words'] ?? [];
+
+                        if (index >= words.length) {
+                          return const SizedBox.shrink();
+                        }
+                        final wordEntry = words[index] as Map<dynamic, dynamic>?;
+                        final tileIds = wordEntry?['tileIds'] as List<dynamic>? ?? [];
+                        final tiles = tileIds.map((tileId) {
+                          return gameData?['tiles']?.firstWhere((tile) => tile['tileId'] == tileId);
+                        }).toList();
+
+                        return Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            if (index == 0)
+                              Text(
+                                "Words:",
+                                style: const TextStyle(
+                                    fontSize: 14,
+                                    color: Colors.white,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                            Row(
+                              children: tiles.map((tile) {
+                                final letter = tile?['letter'] as String? ?? "";
+                                final tileId = tile?['tileId']?.toString() ?? "";
+                                return TileWidget(
+                                  letter: letter,
+                                  tileId: tileId,
+                                  onClickTile: handleTileSelection,
+                                  isSelected: selectedTiles.any((t) => t['tileId'] == tileId),
+                                );
+                              }).toList(),
+                            ),
+                            Text(
+                              "Submitted by: ${wordEntry?['user_id'] as String? ?? ""}",
+                              style: const TextStyle(
+                                  fontSize: 12,
+                                  color: Colors.white70),
+                            ),
+                            const SizedBox(height: 10),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
                   // Tiles
                   Text(
                     gameData?['tiles'] != null ? "Tiles:" : "",
