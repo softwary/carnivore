@@ -13,7 +13,7 @@ import 'package:flutter/material.dart';
        colorScheme: ColorScheme.dark(
          primary: const Color(0xFF9C27B0),
          secondary: const Color(0xFF673AB7),
-         background: const Color(0xFF181828),
+        //  background: const Color(0xFF181828),
          surface: const Color(0xFF282838),
          onPrimary: Colors.white,
          onSecondary: Colors.white,
