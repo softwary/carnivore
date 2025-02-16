@@ -1,4 +1,5 @@
 from .firebase_service import get_game, update_game
+from logging_config import logger
 
 def is_valid_word_length(tiles):
     """Check if a word is at least 3 letters long.
@@ -12,16 +13,16 @@ def is_valid_word_length(tiles):
     return len(tiles) >= 3
 
 
-def uses_at_least_one_middle_tile(tiles):
-    """Check if a word uses at least one tile from the middle.
+def get_middle_tiles_used_in_word(tiles):
+    """Get the list of tiles that are from the middle.
 
     Args:
         tiles (list): List of tiles.
 
     Returns:
-        bool: True if at least one tile is from the middle, False otherwise.
+        list: List of tiles from the middle.
     """
-    return any(tile['location'] == 'middle' for tile in tiles)
+    return [tile for tile in tiles if tile['location'] == 'middle']
 
 def uses_valid_letters(game_id, tiles):
     """Check if a word uses valid letters that are in the game.
@@ -33,16 +34,21 @@ def uses_valid_letters(game_id, tiles):
     Returns:
         bool: True if all letters are valid, False otherwise.
     """
-    print("@@@ in uses_valid_letters()...game_id = ", game_id)
+    logger.debug(f" ")
+    logger.debug(f"@@@ in uses_valid_letters()...game_id = {game_id}")
+    logger.debug(f" ")
+    logger.debug(f"@@@ in uses_valid_letters()...tiles = {tiles}")
     game_data = get_game(game_id)
     if not game_data:
-        print(f"Game with ID {game_id} does not exist.")
+        logger.debug(f"Game with ID {game_id} does not exist.")
         return False
 
     game_letters = game_data.get('remainingLetters', {})
-    print("in uses_valid_letters()...game_letters = ", game_letters)
+    # logger.debug(f"in uses_valid_letters()...game_letters = ", game_letters)
     tile_letters = [tile['letter'] for tile in tiles if tile['letter']]
-    print("in uses_valid_letters()...tile_letters = ", tile_letters)
+    logger.debug(f" ")
+    # logger.debug(f"in uses_valid_letters()...tile_letters = ", tile_letters)
+    logger.debug(f" ")
     return all(letter in game_letters for letter in tile_letters)
 
 def is_valid_word(tiles, game_id):

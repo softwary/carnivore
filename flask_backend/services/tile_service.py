@@ -1,5 +1,7 @@
-from .firebase_service import get_game, update_game
+import firebase_admin
 from firebase_admin import db
+import services.firebase_service as firebase_service
+from logging_config import logger
 
 def get_tile(game_id, tile_id):
     """Fetches a specific tile from a game.
@@ -11,9 +13,9 @@ def get_tile(game_id, tile_id):
     Returns:
         The tile data if found, otherwise None.
     """
-    game_data = get_game(game_id)
+    game_data = firebase_service.get_game(game_id)
     if not game_data:
-        print(f"Game with ID {game_id} does not exist.")
+        logger.debug(f"Game with ID {game_id} does not exist.")
         return None
 
     tiles = game_data.get("tiles")
@@ -25,36 +27,36 @@ def get_tile(game_id, tile_id):
     return tiles.get(tile_id, None)
 
 def update_tiles_location(game_id, tiles, word_id):
-        """Updates the location property of the tiles to be the wordId.
+    """Updates the location property of the tiles to be the wordId.
 
-        Args:
-            game_id (str): The game ID.
-            tiles (list): List of tiles forming the word.
-            word_id (str): The ID of the word.
-        """
-        game_data = get_game(game_id)
+    Args:
+        game_id (str): The game ID.
+        tiles (list): List of tiles forming the word.
+        word_id (str): The ID of the word.
+    """
+    game_data = firebase_service.get_game(game_id)
 
-        if not game_data:
-            print(f"Game with ID {game_id} does not exist.")
-            return
+    if not game_data:
+        logger.debug(f"Game with ID {game_id} does not exist.")
+        return
 
-        print(f"Updating tiles for game ID: {game_id}")
-        print(f"Word ID: {word_id}")
-        print(f"Tiles to update: {tiles}")
+    logger.debug(f"Updating tiles for game ID: {game_id}")
+    logger.debug(f"Word ID: {word_id}")
+    logger.debug(f"Tiles to update: {tiles}")
 
-        for tile in tiles:
-            if tile and 'tileId' in tile:
-                tile_id = tile['tileId']
-                print(f"Processing tile ID: {tile_id}")
+    for tile in tiles:
+        if tile and 'tileId' in tile:
+            tile_id = tile['tileId']
+            logger.debug(f"Processing tile ID: {tile_id}")
 
-                # Find the index of the tile with the matching tileId
-                tile_index = next((index for (index, d) in enumerate(game_data['tiles']) if d["tileId"] == tile_id), None)
+            # Find the index of the tile with the matching tileId
+            tile_index = next((index for (index, d) in enumerate(game_data['tiles']) if d["tileId"] == tile_id), None)
 
-                if tile_index is not None:
-                    # Update the specific tile's location using db
-                    print(f"Updating tile ID {tile_id} location to {word_id}")
-                    db.reference(f'games/{game_id}/tiles/{tile_index}').update({'location': word_id})
-                else:
-                    print(f"Tile with ID {tile_id} not found in the game data.")
+            if tile_index is not None:
+                # Update the specific tile's location using db
+                logger.debug(f"Updating tile ID {tile_id} location to {word_id}")
+                db.reference(f'games/{game_id}/tiles/{tile_index}').update({'location': word_id})
+            else:
+                logger.debug(f"Tile with ID {tile_id} not found in the game data.")
 
-        print(f"Game ID {game_id} updated successfully.")
+    logger.debug(f"Game ID {game_id} updated successfully.")
