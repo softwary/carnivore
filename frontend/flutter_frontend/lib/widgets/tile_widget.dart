@@ -46,7 +46,8 @@ class _TileWidgetState extends State<TileWidget> {
             widget.letter,
             textAlign: TextAlign.center,
             style: TextStyle(
-              fontSize: widget.tileSize * 0.5, // Scale text to fit smaller tiles
+              fontSize:
+                  widget.tileSize * 0.5, // Scale text to fit smaller tiles
               color: widget.textColor,
               fontWeight: FontWeight.bold,
             ),

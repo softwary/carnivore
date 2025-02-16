@@ -201,7 +201,6 @@ class GameScreenState extends State<GameScreen> {
                   ),
                   const SizedBox(height: 5),
                   // Words
-                  // Words
                   Expanded(
                     child: GridView.builder(
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
@@ -280,6 +279,9 @@ class GameScreenState extends State<GameScreen> {
                           playerColors: playerColorMap,
                           onWordTap: (List<dynamic> tiles) {},
                           onClickTile: handleTileSelection,
+                          selectedTileIds: selectedTiles
+                              .map((tile) => tile['tileId']!)
+                              .toSet(), // Pass selected tile IDs
                         );
                       },
                     ),
