@@ -21,30 +21,102 @@ class WordSubmissionType(Enum):
 class InvalidGameDataError(Exception):
     pass
 
+def deal_with_word_submission(game_id: str, user_id: str, word_id: str, word: str, tile_ids: list[int], previous_tile_ids: list[int], action_type: str):
+    """
+    Handles the common tasks when a word is submitted (new, improved, or stolen).
+
+    Responsibilities:
+    - Update tile locations
+    - Update the player's score (only for new letters)
+    - Ensure turn is set to the submitting player
+    - Log the game action
+
+    Args:
+        game_id (str): The ID of the game.
+        user_id (str): The ID of the user submitting the word.
+        word_id (str): The ID of the word being updated.
+        word (str): The updated word.
+        tile_ids (list[int]): The list of tile IDs forming the word.
+        previous_tile_ids (list[int]): The tile IDs of the previous word before modification.
+        action_type (str): The type of action (e.g., "NEW_WORD", "OWN_WORD_IMPROVEMENT", "STEAL_WORD").
+
+    Returns:
+        dict: Success message.
+    """
+    game_ref = firebase_service.get_db_reference(f'games/{game_id}')
+    word_ref = game_ref.child('words').child(word_id)
+
+    # Fetch and sort new tile data
+    new_tiles = [tile_service.get_tile(game_id, tile_id) for tile_id in tile_ids]
+    new_tiles.sort(key=lambda t: tile_ids.index(t['tileId']))
+    new_tile_ids = [tile['tileId'] for tile in new_tiles]
+
+    # Determine newly added tiles (only count new ones for score)
+    previous_tile_set = set(previous_tile_ids)
+    new_tile_set = set(new_tile_ids)
+    added_tiles = new_tile_set - previous_tile_set  # Score is based on new letters only
+
+    # Update tile locations
+    tile_service.update_tiles_location(game_id, new_tiles, word_id)
+
+    # Update player's score (only count new tiles)
+    player_ref = game_ref.child('players').child(user_id)
+    current_score = player_ref.child('score').get() or 0
+    player_ref.update({'score': current_score + len(added_tiles)})
+
+    # ✅ Ensure turn is set for the submitting player and update currentPlayerTurn in Firebase
+    game_data = firebase_service.get_game(game_id)
+    game_data["currentPlayerTurn"] = user_id  # Update turn to the submitting player
+    for player_id, player in game_data["players"].items():
+        player["turn"] = (player_id == user_id)  # Set True for submitting player, False for others
+
+    # Save the updated game state
+    firebase_service.update_game(game_id, game_data)
+
+    logger.debug(f"deal_with_word_submission()... Set turn for user {user_id}")
+
+    # Log the action
+    add_game_action(game_id, {
+        'type': action_type,
+        'playerId': user_id,
+        'timestamp': int(datetime.now().timestamp() * 1000),
+        'wordId': word_id,
+        'newWord': word,
+        'tileIds': new_tile_ids
+    })
+
+    return {'success': True, 'message': f'Word {action_type.lower().replace("_", " ")} successfully'}
+
 def advance_turn(game_id: str):
     """Advances the turn to the next player in the game."""
-    logger.debug(f"[game_service.py][advance_turn] Called")
-    logger.debug(f"[game_service.py][advance_turn] game_id={game_id}")
+    logger.debug(f"[game_service.py][advance_turn] Called for game {game_id}")
 
     game_data = firebase_service.get_game(game_id)
     if not game_data:
         logger.debug(f"[game_service.py][advance_turn] Game with ID {game_id} does not exist.")
-        raise ValueError(f"Game with ID {game_id} does not exist.")
+        return
+    
+    players = game_data.get("players", {})
+    player_ids = list(players.keys())  # Get list of player IDs in order
 
-    players = game_data.get('players', [])
-    if not players:
-        logger.debug(f"[game_service.py][advance_turn] No players found in game with ID {game_id}.")
-        raise ValueError(f"No players found in game with ID {game_id}.")
+    # Find the current player index
+    current_player_id = game_data.get("currentPlayerTurn", None)
+    current_index = player_ids.index(current_player_id) if current_player_id in player_ids else -1
 
-    current_turn = game_data.get('currentTurn', 0)
-    logger.debug(f"[game_service.py][advance_turn] current_turn={current_turn}")
+    # Determine the next player's turn
+    next_index = (current_index + 1) % len(player_ids) if current_index != -1 else 0
+    next_player_id = player_ids[next_index]
 
-    next_turn = (current_turn + 1) % len(players)
-    logger.debug(f"[game_service.py][advance_turn] next_turn={next_turn}")
+    # Update player turns
+    for player_id, player_data in players.items():
+        player_data["turn"] = (player_id == next_player_id)
 
-    # Update the current turn in the database
-    firebase_service.update_game(game_id, {'currentTurn': next_turn})
-    logger.debug(f"[game_service.py][advance_turn] Updated current turn to player {next_turn} in game {game_id}")
+    # Update the database
+    game_data["currentPlayerTurn"] = next_player_id
+    game_data["players"] = players
+
+    firebase_service.update_game(game_id, game_data)
+    logger.debug(f"[game_service.py][advance_turn] New turn: Player {next_player_id}")
 
 def add_game_action(game_id: str, action: dict):
     """Adds an action to the game's action log.
@@ -150,7 +222,7 @@ def flip_tile(game_id):
     """Flips a random tile that is not flipped and assigns a random letter.
 
     Args:
-        game_data (dict): The current state of the game, including tiles and remaining letters.
+        game_id (str): The unique identifier of the game.
 
     Returns:
         tuple: (bool, dict) indicating whether the tile was flipped successfully, and the new game state.
@@ -159,49 +231,48 @@ def flip_tile(game_id):
     game_data = firebase_service.get_game(game_id)
 
     if not game_data:
-        logger.debug(f"game_service.flip_tile()... Game with ID {game_id} does not exist.")
-        return
+        logger.debug(f"flip_tile()... Game with ID {game_id} does not exist.")
+        return False, None  # Return explicit failure
+
     tiles = game_data.get('tiles', [])
-    remaining_letters = game_data.get('remainingLetters', {remainingLetters})
-    logger.debug(f"flip_tile()... tiles= {tiles}")
-    logger.debug(f"flip_tile()... initial remaining_letters= {remaining_letters}")
-    
-    # Filter tiles that are not flipped
-    tiles_dict = {tile['tileId']: tile for tile in tiles}
-    unflipped_tiles = {tid: t for tid, t in tiles_dict.items() if t['location'] == 'unflippedTilesPool'}
-    
-    if not unflipped_tiles or not remaining_letters:
-        logger.debug(f"flip_tile()... No unflipped tiles or no remaining letters")
-        return False, game_data  # No tiles to flip or no letters left
-    
+    remaining_letters = game_data.get('remainingLetters', {})
+
+    # logger.debug(f"flip_tile()... Initial game data: {game_data}")
+    logger.debug(f"flip_tile()... Initial remaining_letters: {remaining_letters}")
+
+    # Filter tiles that are not yet flipped
+    unflipped_tiles = [tile for tile in tiles if tile['location'] == 'unflippedTilesPool']
+
+    if not unflipped_tiles or not any(remaining_letters.values()):
+        logger.debug("flip_tile()... No unflipped tiles or no available letters.")
+        return False, game_data  # No available tiles or letters
+
     # Select a random unflipped tile
-    tile_id, tile = random.choice(list(unflipped_tiles.items()))
-    logger.debug(f"flip_tile()... selected tile_id={tile_id}, tile={tile}")
-    
-    # Assign a random letter to the tile based on remaining letters
-    letter, count = random.choice([(l, c) for l, c in remaining_letters.items() if c > 0])
-    logger.debug(f"flip_tile()... selected letter={letter}, count={count}")
-    
-    if count > 0:
-        tile['letter'] = letter
-        tile['location'] = 'middle'
-        remaining_letters[letter] -= 1
-        logger.debug(f"flip_tile()... decremented remaining_letters['{letter}'] to {remaining_letters[letter]}")
+    tile = random.choice(unflipped_tiles)
+    logger.debug(f"flip_tile()... Selected tile: {tile}")
 
-        for i, t in enumerate(tiles):
-            if t['tileId'] == tile_id:
-                tiles[i] = tile
-                break
-        game_data['tiles'] = tiles
-        game_data['remainingLetters'] = remaining_letters
-        logger.debug(f"flip_tile()... updated game_data with new tile and remaining_letters")
+    # Select a letter based on weighted probability
+    letters, counts = zip(*[(l, c) for l, c in remaining_letters.items() if c > 0])
+    letter = random.choices(letters, weights=counts, k=1)[0]
+    logger.debug(f"flip_tile()... Selected letter: {letter}")
 
-        set_next_player_turn(game_id)
-        logger.debug(f"flip_tile()... just tried to set next player's turn")
-        return True, game_data
-    
-    logger.debug(f"flip_tile()... no valid letter found to assign")
-    return False, game_data
+    # Assign the letter to the tile and update game state
+    tile['letter'] = letter
+    tile['location'] = 'middle'
+    remaining_letters[letter] -= 1
+
+    logger.debug(f"flip_tile()... Updated tile: {tile}")
+    logger.debug(f"flip_tile()... Remaining letters after update: {remaining_letters}")
+
+    # Save updated game state
+    game_data['remainingLetters'] = remaining_letters
+    game_data['tiles'] = tiles  # Since we modified `tile` directly, `tiles` is updated
+
+    # Move to the next player's turn
+    set_next_player_turn(game_id)
+    logger.debug("flip_tile()... Set next player's turn.")
+
+    return True, game_data
 
 def submit_valid_word(user_id, game_id, tiles):
     """Submits a valid word for the game.
@@ -297,7 +368,9 @@ def set_next_player_turn(game_id):
     logger.debug(f"set_next_player_turn()... players= {players}") 
     player_order = [player['turnOrder'] for player in players.values()]
     logger.debug(f"set_next_player_turn()... player_order= {player_order}")
-    current_player_order = next((player['turnOrder'] for player in players.values() if player['turn']), -1)
+    # current_player_order = next((player['turnOrder'] for player in players.values() if player['turn']), -1)
+    current_player_order = next((player['turnOrder'] for player_id, player in players.items() if player.get('turn', False)), -1)
+
     if current_player_order == -1:
         next_player_order = 1
     else:
@@ -398,7 +471,9 @@ def submit_middle_word(game_id: str, user_id: str, tile_ids: list[int], word: st
     current_score = player_ref.child('score').get() or 0
     player_ref.update({'score': current_score + len(word)})
 
-    advance_turn(game_id)
+    # Ensure turn is set for the submitting player if the word submission is valid
+    player_service.set_player_turn(game_id, user_id)
+
 
     add_game_action(game_id, {
         'type': WordSubmissionType.MIDDLE_WORD.name,
@@ -412,11 +487,7 @@ def submit_middle_word(game_id: str, user_id: str, tile_ids: list[int], word: st
 
 def improve_own_word(game_id: str, user_id: str, tile_ids: list[int], word: str) -> dict:
     logger.debug(f"[game_service.py][improve_own_word] Called")
-    logger.debug(f"game_id= {game_id}")
-    logger.debug(f"user_id= {user_id}")
-    logger.debug(f"tile_ids= {tile_ids}")
-    logger.debug(f"word= {word}")
-    
+
     game_data = firebase_service.get_game(game_id)
     if not game_data:
         return {'success': False, 'message': f"Game with ID {game_id} does not exist."}
@@ -425,6 +496,7 @@ def improve_own_word(game_id: str, user_id: str, tile_ids: list[int], word: str)
     improved_word_id = None
     existing_word = None
 
+    # Find the word to improve
     for word_id, word_data in words.items():
         if word_data["current_owner_user_id"] == user_id and word_data["status"] == "valid":
             word_tile_ids = set(word_data["tileIds"])
@@ -436,7 +508,12 @@ def improve_own_word(game_id: str, user_id: str, tile_ids: list[int], word: str)
 
     if not improved_word_id:
         return {'success': False, 'message': f"No valid word found for user {user_id} to improve."}
-    
+
+    game_ref = firebase_service.get_db_reference(f'games/{game_id}')
+    existing_word_ref = game_ref.child('words').child(improved_word_id)
+    existing_word_history = existing_word_ref.child('word_history').get() or []
+
+    # Store previous word state in history
     old_word_data = {
         'word': existing_word['word'],
         'timestamp': int(datetime.now().timestamp() * 1000),
@@ -444,58 +521,29 @@ def improve_own_word(game_id: str, user_id: str, tile_ids: list[int], word: str)
         'tileIds': existing_word['tileIds'],
         'playerId': existing_word['user_id']
     }
-    game_ref = firebase_service.get_db_reference(f'games/{game_id}')
-    existing_word_ref = game_ref.child('words').child(improved_word_id)
-    existing_word_history = existing_word_ref.child('word_history').get()
 
+    # Avoid duplicate history entries
     if not any(history['word'] == existing_word['word'] for history in existing_word_history):
         existing_word_ref.child('word_history').push(old_word_data)
 
-    new_tiles = [tile_service.get_tile(game_id, tile_id) for tile_id in tile_ids]
-    new_tiles.sort(key=lambda t: tile_ids.index(t['tileId']))
-    new_tile_ids = [tile['tileId'] for tile in new_tiles]
-
+    # Update word
     existing_word_ref.update({
-        'tileIds': new_tile_ids,
-        'word': word
+        'word': word,
+        'tileIds': tile_ids
     })
 
-    tile_service.update_tiles_location(game_id, new_tiles, improved_word_id)
-
-    player_ref = game_ref.child('players').child(user_id)
-    current_score = player_ref.child('score').get() or 0
-
-    player_ref.update({'score': current_score + len(new_tile_ids)})
-    logger.debug(f"[game_service.py][improve_own_word] Updated player's score to {current_score + len(new_tile_ids)}")
-
-    # Advance the turn
-    advance_turn(game_id)
-    logger.debug(f"[game_service.py][improve_own_word] Advanced the turn")
-
-    # Add game action
-    add_game_action(game_id, {
-        'type': WordSubmissionType.OWN_WORD_IMPROVEMENT.name,  # Store as string
-        'playerId': user_id,
-        'timestamp': int(datetime.now().timestamp() * 1000),
-        'improvedWordId': improved_word_id,
-        'newWord': word,
-        'tileIds': new_tile_ids
-    })
-    logger.debug(f"[game_service.py][improve_own_word] Added game action for word improvement")
-
-    return {'success': True, 'message': 'Word improved successfully'}
+    # Call helper function
+    return deal_with_word_submission(
+        game_id, user_id, improved_word_id, word, tile_ids, existing_word['tileIds'], "OWN_WORD_IMPROVEMENT"
+    )
 
 def steal_word(game_id: str, user_id: str, tile_ids: list[int], word: str) -> dict:
     logger.debug(f"[game_service.py][steal_word] Called")
-    logger.debug(f"game_id= {game_id}")
-    logger.debug(f"user_id= {user_id}")
-    logger.debug(f"tile_ids= {tile_ids}")
-    logger.debug(f"word= {word}")
-    
+
     game_data = firebase_service.get_game(game_id)
     if not game_data:
         return {'success': False, 'message': f"Game with ID {game_id} does not exist."}
-    
+
     words = game_data.get("words", {})
     stolen_word_id = None
     stolen_word = None
@@ -512,14 +560,14 @@ def steal_word(game_id: str, user_id: str, tile_ids: list[int], word: str) -> di
 
     if not stolen_word_id:
         return {'success': False, 'message': f"No valid word found for user {user_id} to steal."}
-    
+
     game_ref = firebase_service.get_db_reference(f'games/{game_id}')
     stolen_word_ref = game_ref.child('words').child(stolen_word_id)
 
-    # Fetch the existing word history
+    # Fetch existing word history
     existing_word_history = stolen_word_ref.child('word_history').get() or []
 
-    # Prepare previous state for history
+    # Store previous word state in history
     previous_word_entry = {
         'word': stolen_word['word'],
         'timestamp': int(datetime.now().timestamp() * 1000),
@@ -528,42 +576,19 @@ def steal_word(game_id: str, user_id: str, tile_ids: list[int], word: str) -> di
         'playerId': stolen_word['user_id']
     }
 
-    # Avoid duplicates in word_history
+    # Avoid duplicate history entries
     if not any(entry['word'] == stolen_word['word'] for entry in existing_word_history):
         stolen_word_ref.child('word_history').push(previous_word_entry)
 
-    # Get the updated list of tiles
-    new_tiles = [tile_service.get_tile(game_id, tile_id) for tile_id in tile_ids]
-    new_tiles.sort(key=lambda t: tile_ids.index(t['tileId']))
-    new_tile_ids = [tile['tileId'] for tile in new_tiles]
-
-    # Update the existing word entry instead of creating a new one
+    # Update word owner
     stolen_word_ref.update({
-        'tileIds': new_tile_ids,
         'word': word,
+        'tileIds': tile_ids,
         'current_owner_user_id': user_id,
-        'user_id': user_id  # Update the original word's owner
+        'user_id': user_id
     })
 
-    # Update tile locations
-    tile_service.update_tiles_location(game_id, new_tiles, stolen_word_id)
-
-    # Update the score for the new owner
-    player_ref = game_ref.child('players').child(user_id)
-    current_score = player_ref.child('score').get() or 0
-    player_ref.update({'score': current_score + len(word)})
-    
-    # Advance the turn
-    advance_turn(game_id)
-
-    # Log the action
-    add_game_action(game_id, {
-        'type': WordSubmissionType.STEAL_WORD.name,
-        'playerId': user_id,
-        'timestamp': int(datetime.now().timestamp() * 1000),
-        'stolenWordId': stolen_word_id,
-        'newWord': word,
-        'tileIds': new_tile_ids
-    })
-
-    return {'success': True, 'message': 'Word stolen successfully'}
+    # Call helper function
+    return deal_with_word_submission(
+        game_id, user_id, stolen_word_id, word, tile_ids, stolen_word['tileIds'], "STEAL_WORD"
+    )

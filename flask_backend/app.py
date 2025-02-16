@@ -248,7 +248,6 @@ def flip_tile():
         else:
             success, updated_game_data = game_service.flip_tile(game_id)
             logger.debug(f"flip_tile() --> success= {success}")
-            logger.debug(f"flip_tile() --> updated_game_data= {updated_game_data}")
             if success:
                 firebase_service.update_game(game_id, updated_game_data)  # Update game state in Firebase
                 logger.debug(f"flip_tile() --> Game state updated in Firebase")
