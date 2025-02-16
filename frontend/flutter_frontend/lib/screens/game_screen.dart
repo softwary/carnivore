@@ -207,9 +207,9 @@ class GameScreenState extends State<GameScreen> {
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: 4, // Number of columns
                         childAspectRatio:
-                            3, // Adjust the aspect ratio as needed
-                        crossAxisSpacing: 10,
-                        mainAxisSpacing: 10,
+                            2, // Adjust the aspect ratio as needed
+                        crossAxisSpacing: 5,
+                        mainAxisSpacing: 5,
                       ),
                       itemCount: gameData?['words']?.length ?? 0,
                       itemBuilder: (context, index) {
