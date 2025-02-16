@@ -2,10 +2,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
+import 'dart:collection';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
 import 'package:flutter_frontend/widgets/horizontal_reorderable_list_view.dart';
 import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
+import 'package:flutter_frontend/widgets/word_widget.dart';
+import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
 
 class GameScreen extends StatefulWidget {
   final String gameId;
@@ -16,72 +19,22 @@ class GameScreen extends StatefulWidget {
   GameScreenState createState() => GameScreenState();
 }
 
-class SelectedLetterTile extends StatelessWidget {
-  final String letter;
-
-  const SelectedLetterTile({
-    super.key,
-    required this.letter,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(20.0),
-      decoration: BoxDecoration(
-        color: Theme.of(context).colorScheme.surface,
-        borderRadius: BorderRadius.circular(8.0),
-      ),
-      child: Center(
-        child: Text(
-          letter,
-          textAlign: TextAlign.center,
-          style: Theme.of(context).textTheme.titleMedium!.copyWith(
-                fontSize: 18,
-              ),
-        ),
-      ),
-    );
-  }
-}
-
 class GameScreenState extends State<GameScreen> {
   late DatabaseReference gameRef;
   Map<String, dynamic>? gameData;
-  List<Map<String, String>> selectedTiles =
-      []; // List of Maps for showing which tiles are selected
-  List<int> orderedTiles = []; // for submitting words
-
-  void _handleReorderFinished(List<int> newTileIds) {
-    setState(() {
-      print("@@ Received reordered tileIds: $newTileIds");
-      orderedTiles =
-          newTileIds; // Update orderedTiles with the new order when tiles are rearranged
-      print("@@ Updated orderedTiles: $orderedTiles");
-    });
-  }
-
-  void handleTileSelection(String letter, String tileId, bool isSelected) {
-    print(
-        "handleTileSelection called with letter: $letter, tileId: $tileId, isSelected: $isSelected");
-    setState(() {
-      final tileData = {'letter': letter, 'tileId': tileId};
-      if (isSelected) {
-        if (!selectedTiles.any((tile) => tile['tileId'] == tileId)) {
-          print(
-              "This tile was not in here, adding this tile ($letter) to selectedTiles");
-          selectedTiles.add(tileData);
-        }
-      } else {
-        selectedTiles.removeWhere((tile) => tile['tileId'] == tileId);
-      }
-      if (selectedTiles.isNotEmpty) {
-        _handleReorderFinished(
-            selectedTiles.map((tile) => int.parse(tile['tileId']!)).toList());
-      }
-      print("My Tiles: $selectedTiles");
-    });
-  }
+  Map<String, Color> playerColorMap = {}; // Store player colors
+  List<int> orderedTiles = [];
+  List<Map<String, String>> selectedTiles = [];
+  List<Color> playerColors = [
+    Colors.blue,
+    Colors.green,
+    Colors.red,
+    Colors.orange,
+    Colors.purple,
+    Colors.yellow,
+    Colors.cyan,
+    Colors.pink,
+  ];
 
   @override
   void initState() {
@@ -90,66 +43,28 @@ class GameScreenState extends State<GameScreen> {
   }
 
   void fetchGameData() {
-    print('Fetching game data for gameId: ${widget.gameId}');
     gameRef = FirebaseDatabase.instance.ref('games/${widget.gameId}');
 
     gameRef.onValue.listen((event) {
-      final data = event.snapshot.value as Map<dynamic, dynamic>?;
-      print('Data received from Firebase = $data');
-      if (data != null) {
-        print('Data is not null, updating state');
+      final data = event.snapshot.value;
+
+      if (data is Map) {
         setState(() {
-          gameData = Map<String, dynamic>.from(data);
-          print("@@IN fetchGameData...Game Data: $gameData");
+          gameData = jsonDecode(jsonEncode(
+              data)); // 🔹 Fix: Convert LinkedHashMap to standard Map
+
+          // Assign colors to players
+          final playerIds = gameData?['players']?.keys.toList() ?? [];
+          for (int i = 0; i < playerIds.length; i++) {
+            playerColorMap[playerIds[i]] =
+                playerColors[i % playerColors.length];
+          }
         });
       } else {
-        print('Data is null');
+        print("Unexpected data format: $data");
       }
-    }, onError: (error) {
-      print('Error fetching data: $error');
     });
   }
-
-  // Future<void> _sendTileIds() async {
-  //   if (orderedTiles.isEmpty || orderedTiles.length < 3) {
-  //     return;
-  //   }
-  //   final token = await FirebaseAuth.instance.currentUser!.getIdToken();
-  //   final url = Uri.parse('http://192.168.1.218:4000/submit-word');
-  //   print("Sending tileIds: $orderedTiles");
-  //   final game_id_log = widget.gameId;
-  //   print("Sending tileIds: $game_id_log");
-  //   final Map<String, dynamic> payload = {
-  //     'game_id': widget.gameId,
-  //     'tile_ids': orderedTiles,
-  //   };
-  //   print("Payload: $payload");
-
-  //   try {
-  //     final response = await http.post(
-  //       url,
-  //       headers: {
-  //         'Content-Type': 'application/json',
-  //         'Authorization': 'Bearer $token'
-  //       },
-  //       body: jsonEncode(payload),
-  //     );
-
-  //     if (response.statusCode == 200) {
-  //       final Map<String, dynamic> responseData = jsonDecode(response.body);
-  //       setState(() {
-  //         print("Response Data: $responseData");
-  //       });
-  //       selectedTiles.clear();
-  //       orderedTiles.clear();
-  //     } else {
-  //       print(
-  //           'Error sending tileIds: ${response.statusCode} - ${response.body}');
-  //     }
-  //   } catch (e) {
-  //     print('Error sending tileIds: $e');
-  //   }
-  // }
 
   Future<void> _sendTileIds() async {
     if (orderedTiles.isEmpty || orderedTiles.length < 3) {
@@ -225,30 +140,54 @@ class GameScreenState extends State<GameScreen> {
     }
   }
 
+  void handleTileSelection(String letter, String tileId, bool isSelected) {
+    setState(() {
+      final tileData = {'letter': letter, 'tileId': tileId};
+      if (isSelected) {
+        if (!selectedTiles.any((tile) => tile['tileId'] == tileId)) {
+          selectedTiles.add(tileData);
+        }
+      } else {
+        selectedTiles.removeWhere((tile) => tile['tileId'] == tileId);
+      }
+      if (selectedTiles.isNotEmpty) {
+        _handleReorderFinished(
+            selectedTiles.map((tile) => int.parse(tile['tileId']!)).toList());
+      }
+    });
+  }
+
+  void _handleReorderFinished(List<int> newTileIds) {
+    setState(() {
+      orderedTiles = newTileIds;
+    });
+  }
+
+  dynamic _convertToMap(dynamic value) {
+    if (value is Map<Object?, Object?> ||
+        value is LinkedHashMap<Object?, Object?>) {
+      return value
+          .map((key, value) => MapEntry(key.toString(), _convertToMap(value)));
+    } else if (value is List) {
+      return value.map((item) => _convertToMap(item)).toList();
+    }
+    return value;
+  }
+
   @override
   Widget build(BuildContext context) {
-    ThemeData theme = Theme.of(context);
-
-    print('Building GameScreen for gameId: ${widget.gameId}');
     return Scaffold(
-      appBar: AppBar(
-          backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-          title: Text("Game ${widget.gameId}")),
+      appBar: AppBar(title: Text("Game ${widget.gameId}")),
       body: gameData == null
-          ? const Center(
-              child: CircularProgressIndicator()) // Show loading indicator
+          ? const Center(child: CircularProgressIndicator())
           : Padding(
               padding: const EdgeInsets.all(16.0),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  // Player Ids
                   Text(
                     "Player IDs:",
-                    style: const TextStyle(
-                        fontSize: 16,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
                   const SizedBox(height: 5),
                   Text(
@@ -258,127 +197,92 @@ class GameScreenState extends State<GameScreen> {
                                 '${entry.key} (${entry.value['score'] ?? 0})')
                             .join(', ') ??
                         'No players',
-                    style: const TextStyle(
-                        fontSize: 14,
-                        color: Colors.white,
-                        fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 14, color: Colors.white),
                   ),
-                  // const SizedBox(height: 10),
-                  // Player Words
                   const SizedBox(height: 5),
-                  //
+                  // Words
+                  // Words
                   Expanded(
-                    // Words Display
-                    child: gameData != null &&
-                            gameData!['words'] is Map<dynamic, dynamic>
-                        ? ListView.builder(
-                            itemCount: (gameData!['words'] as Map).length,
-                            itemBuilder: (context, index) {
-                              final wordKey =
-                                  ((gameData?['words'] ?? {}) as Map)
-                                      .keys
-                                      .toList()[index];
-                              final wordEntry = (gameData!['words']
-                                      as Map<dynamic, dynamic>?)?[wordKey]
-                                  as Map<dynamic, dynamic>?;
-                              final word = (wordEntry?['word'] ?? '') as String;
-                              final currentOwnerUserId =
-                                  (wordEntry?['current_owner_user_id'] ?? '')
-                                      as String;
-                              final tileIds =
-                                  (wordEntry?['tileIds'] as List<dynamic>?) ??
-                                      "";
+                    child: GridView.builder(
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: 4, // Number of columns
+                        childAspectRatio:
+                            3, // Adjust the aspect ratio as needed
+                        crossAxisSpacing: 10,
+                        mainAxisSpacing: 10,
+                      ),
+                      itemCount: gameData?['words']?.length ?? 0,
+                      itemBuilder: (context, index) {
+                        final wordKey =
+                            gameData?['words']?.keys.toList()[index];
+                        final wordEntryRaw = gameData?['words']?[wordKey];
 
-                              final tiles = (tileIds as List<dynamic>)
-                                  .map((tileId) {
-                                    return (gameData!['tiles'] as List?)
-                                        ?.firstWhere(
-                                      (tile) => tile?['tileId'] == tileId,
-                                      orElse: () => null,
-                                    );
-                                  })
-                                  .where((tile) => tile != null)
-                                  .toList();
+                        final wordEntry = wordEntryRaw is Map
+                            ? Map<String, dynamic>.from(wordEntryRaw.map(
+                                (key, value) =>
+                                    MapEntry(key.toString(), value)))
+                            : null;
 
-                              // Sort tiles based on the order of tileIds
-                              tiles.sort((a, b) {
-                                final aTileId = a?['tileId'];
-                                final bTileId = b?['tileId'];
-                                return tileIds
-                                    .indexOf(aTileId)
-                                    .compareTo(tileIds.indexOf(bTileId));
-                              });
+                        final ownerId =
+                            wordEntry?['current_owner_user_id'] as String? ??
+                                '';
 
-                              // Normalize word history to be a list of maps
-                              List<dynamic> wordHistory = [];
-                              if (wordEntry?['word_history'] is Map) {
-                                // Convert map to list
-                                wordHistory =
-                                    (wordEntry!['word_history'] as Map)
-                                        .values
-                                        .toList();
-                              } else if (wordEntry?['word_history'] is List) {
-                                // Use the list directly
-                                wordHistory =
-                                    wordEntry!['word_history'] as List;
-                              }
+                        // 🔹 Fetch tileIds safely
+                        final tileIds =
+                            (wordEntry?['tileIds'] as List<dynamic>?) ?? [];
+                        print(
+                            "🟢 Word: $wordKey, Tile IDs: $tileIds"); // Debugging output
 
-                              return Card(
-                                // Wrap each word in a Card for better visual separation
-                                margin: const EdgeInsets.symmetric(vertical: 8),
-                                // Add margin
-                                child: Padding(
-                                  padding: const EdgeInsets.all(16.0),
-                                  // Add padding
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(
-                                          height: 8), // Increased spacing
-                                      Row(
-                                        children: tiles.map<Widget>((tile) {
-                                          final letter =
-                                              tile?['letter'] as String ?? "";
-                                          final tileId =
-                                              tile?['tileId']?.toString() ?? "";
-                                          return TileWidget(
-                                            letter: letter,
-                                            tileId: tileId,
-                                            onClickTile: handleTileSelection,
-                                            isSelected: selectedTiles.any(
-                                                (t) => t['tileId'] == tileId),
-                                          );
-                                        }).toList(),
-                                      ),
-                                      const SizedBox(
-                                          height: 8), // Increased spacing
+                        List<Map<String, dynamic>> tiles = [];
 
-                                      if (wordHistory.isNotEmpty) ...[
-                                        Tooltip(
-                                          message: _buildWordHistoryTooltip(
-                                              wordHistory),
-                                          child: const Text(
-                                            "Word History (hover to view)",
-                                            style: TextStyle(
-                                                fontSize: 14,
-                                                color: Colors.white70),
-                                          ),
-                                        ),
-                                      ],
-                                      Text(
-                                        "Submitted by: $currentOwnerUserId",
-                                        style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.white70),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          )
-                        : const Center(child: Text("No words yet.")),
+                        if (gameData?['tiles'] is List<dynamic>) {
+                          final allTiles = List<Map<String, dynamic>>.from(
+                            gameData!['tiles'].whereType<Map>().toList(),
+                          );
+
+                          print(
+                              "🔵 All Tiles in gameData: $allTiles"); // Debugging all tiles
+
+                          // 🔹 Ensure tile ID comparison is correct
+                          tiles = tileIds
+                              .map((tileId) {
+                                final matchingTile = allTiles.firstWhere(
+                                  (tile) =>
+                                      tile.containsKey('tileId') &&
+                                      tile['tileId'].toString() ==
+                                          tileId.toString(),
+                                  orElse: () => <String,
+                                      dynamic>{}, // Return an empty map instead of null
+                                );
+
+                                if (matchingTile.isEmpty) {
+                                  print("⚠️ Tile with ID $tileId not found!");
+                                  return null;
+                                } else {
+                                  print(
+                                      "✅ Found tile for word $wordKey: $matchingTile");
+                                  return matchingTile;
+                                }
+                              })
+                              .where((tile) => tile != null)
+                              .cast<Map<String, dynamic>>()
+                              .toList();
+                        } else {
+                          print("⚠️ gameData['tiles'] is null or not a List");
+                        }
+
+                        print(
+                            "🟣 Tiles passed to WordCard: $tiles"); // Debugging
+
+                        return WordCard(
+                          tiles: tiles,
+                          currentOwnerUserId: ownerId,
+                          playerColors: playerColorMap,
+                          onWordTap: (List<dynamic> tiles) {},
+                          onClickTile: handleTileSelection,
+                        );
+                      },
+                    ),
                   ),
                   // Tiles
                   Text(
@@ -445,7 +349,15 @@ class GameScreenState extends State<GameScreen> {
                   HorizontalReorderableListView(
                     items: selectedTiles,
                     itemBuilder: (tile) {
-                      return SelectedLetterTile(letter: tile['letter']!);
+                      return SelectedLetterTile(
+                        letter: tile['letter']!,
+                        onRemove: () {
+                          setState(() {
+                            selectedTiles.remove(tile);
+                            orderedTiles.remove(int.parse(tile['tileId']!));
+                          });
+                        },
+                      );
                     },
                     onReorderFinished: _handleReorderFinished,
                   ),
