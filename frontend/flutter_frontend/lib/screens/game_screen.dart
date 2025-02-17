@@ -9,6 +9,7 @@ import 'package:http/http.dart' as http;
 import 'package:intl/intl.dart';
 import 'package:flutter_frontend/widgets/word_widget.dart';
 import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
+import 'package:flutter_frontend/widgets/game_log.dart';
 
 class GameScreen extends StatefulWidget {
   final String gameId;
@@ -140,6 +141,23 @@ class GameScreenState extends State<GameScreen> {
     }
   }
 
+  // void handleTileSelection(String letter, String tileId, bool isSelected) {
+  //   setState(() {
+  //     final tileData = {'letter': letter, 'tileId': tileId};
+  //     if (isSelected) {
+  //       if (!selectedTiles.any((tile) => tile['tileId'] == tileId)) {
+  //         selectedTiles.add(tileData);
+  //       }
+  //     } else {
+  //       selectedTiles.removeWhere((tile) => tile['tileId'] == tileId);
+  //     }
+  //     if (selectedTiles.isNotEmpty) {
+  //       _handleReorderFinished(
+  //           selectedTiles.map((tile) => int.parse(tile['tileId']!)).toList());
+  //     }
+  //   });
+  // }
+
   void handleTileSelection(String letter, String tileId, bool isSelected) {
     setState(() {
       final tileData = {'letter': letter, 'tileId': tileId};
@@ -200,13 +218,13 @@ class GameScreenState extends State<GameScreen> {
                     style: const TextStyle(fontSize: 14, color: Colors.white),
                   ),
                   const SizedBox(height: 5),
-                  // Words
+
+                  // Words Section
                   Expanded(
                     child: GridView.builder(
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 4, // Number of columns
-                        childAspectRatio:
-                            2, // Adjust the aspect ratio as needed
+                        crossAxisCount: 2,
+                        childAspectRatio: 2,
                         crossAxisSpacing: 5,
                         mainAxisSpacing: 5,
                       ),
@@ -226,11 +244,8 @@ class GameScreenState extends State<GameScreen> {
                             wordEntry?['current_owner_user_id'] as String? ??
                                 '';
 
-                        // 🔹 Fetch tileIds safely
                         final tileIds =
                             (wordEntry?['tileIds'] as List<dynamic>?) ?? [];
-                        print(
-                            "🟢 Word: $wordKey, Tile IDs: $tileIds"); // Debugging output
 
                         List<Map<String, dynamic>> tiles = [];
 
@@ -239,10 +254,6 @@ class GameScreenState extends State<GameScreen> {
                             gameData!['tiles'].whereType<Map>().toList(),
                           );
 
-                          print(
-                              "🔵 All Tiles in gameData: $allTiles"); // Debugging all tiles
-
-                          // 🔹 Ensure tile ID comparison is correct
                           tiles = tileIds
                               .map((tileId) {
                                 final matchingTile = allTiles.firstWhere(
@@ -250,28 +261,17 @@ class GameScreenState extends State<GameScreen> {
                                       tile.containsKey('tileId') &&
                                       tile['tileId'].toString() ==
                                           tileId.toString(),
-                                  orElse: () => <String,
-                                      dynamic>{}, // Return an empty map instead of null
+                                  orElse: () => <String, dynamic>{},
                                 );
 
-                                if (matchingTile.isEmpty) {
-                                  print("⚠️ Tile with ID $tileId not found!");
-                                  return null;
-                                } else {
-                                  print(
-                                      "✅ Found tile for word $wordKey: $matchingTile");
-                                  return matchingTile;
-                                }
+                                return matchingTile.isEmpty
+                                    ? null
+                                    : matchingTile;
                               })
                               .where((tile) => tile != null)
                               .cast<Map<String, dynamic>>()
                               .toList();
-                        } else {
-                          print("⚠️ gameData['tiles'] is null or not a List");
                         }
-
-                        print(
-                            "🟣 Tiles passed to WordCard: $tiles"); // Debugging
 
                         return WordCard(
                           tiles: tiles,
@@ -281,69 +281,104 @@ class GameScreenState extends State<GameScreen> {
                           onClickTile: handleTileSelection,
                           selectedTileIds: selectedTiles
                               .map((tile) => tile['tileId']!)
-                              .toSet(), // Pass selected tile IDs
+                              .toSet(),
                         );
                       },
                     ),
-                  ),
-                  // Tiles
-                  Text(
-                    gameData?['tiles'] != null ? "Tiles:" : "",
-                    style: const TextStyle(fontSize: 16, color: Colors.white),
                   ),
                   const SizedBox(height: 5),
+
+                  // Tiles and Game Log section in a Row
                   Expanded(
-                    child: GridView.builder(
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 12, // Increase the number of columns
-                        childAspectRatio: 1.0,
-                        crossAxisSpacing: 1.0, // Reduce spacing
-                        mainAxisSpacing: 1.0, // Reduce spacing
-                      ),
-                      itemCount: (gameData?['tiles'] as List?)
-                              ?.where((tile) =>
-                                  tile != null &&
-                                  tile is Map &&
-                                  tile['location'] == 'middle' &&
-                                  (tile['letter'] as String?)?.isNotEmpty ==
-                                      true)
-                              .length ??
-                          0,
-                      itemBuilder: (context, index) {
-                        final tiles = (gameData?['tiles'] as List?)
-                            ?.where((tile) =>
-                                tile != null &&
-                                tile is Map &&
-                                tile['location'] == 'middle' &&
-                                (tile['letter'] as String?)?.isNotEmpty == true)
-                            .toList();
+                    child: Row(
+                      children: [
+                        // Tiles Section
+                        Expanded(
+                          flex: 2,
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                gameData?['tiles'] != null ? "Tiles:" : "",
+                                style: const TextStyle(
+                                    fontSize: 16, color: Colors.white),
+                              ),
+                              const SizedBox(height: 5),
+                              Expanded(
+                                child: GridView.builder(
+                                  gridDelegate:
+                                      const SliverGridDelegateWithFixedCrossAxisCount(
+                                    crossAxisCount: 12,
+                                    childAspectRatio: 1.0,
+                                    crossAxisSpacing: 1.0,
+                                    mainAxisSpacing: 1.0,
+                                  ),
+                                  itemCount: (gameData?['tiles'] as List?)
+                                          ?.where((tile) =>
+                                              tile != null &&
+                                              tile is Map &&
+                                              tile['location'] == 'middle' &&
+                                              (tile['letter'] as String?)
+                                                      ?.isNotEmpty ==
+                                                  true)
+                                          .length ??
+                                      0,
+                                  itemBuilder: (context, index) {
+                                    final tiles = (gameData?['tiles'] as List?)
+                                        ?.where((tile) =>
+                                            tile != null &&
+                                            tile is Map &&
+                                            tile['location'] == 'middle' &&
+                                            (tile['letter'] as String?)
+                                                    ?.isNotEmpty ==
+                                                true)
+                                        .toList();
 
-                        if (tiles == null || index >= tiles.length) {
-                          return const SizedBox.shrink();
-                        }
+                                    if (tiles == null ||
+                                        index >= tiles.length) {
+                                      return const SizedBox.shrink();
+                                    }
 
-                        final tile = tiles[index] as Map<dynamic, dynamic>?;
-                        final letter = tile?['letter'] as String? ?? "";
-                        final tileId = tile?['tileId']?.toString() ?? "";
-                        print("gameData?['tiles']: $gameData?['tiles']");
-                        return Padding(
-                          padding: const EdgeInsets.all(1.0), // Reduced padding
-                          child: TileWidget(
-                            letter: letter,
-                            tileId: tileId,
-                            onClickTile: (selectedLetter, tileId, isSelected) {
-                              setState(() {
-                                handleTileSelection(
-                                    selectedLetter, tileId, isSelected);
-                              });
-                            },
-                            isSelected: false,
+                                    final tile =
+                                        tiles[index] as Map<dynamic, dynamic>?;
+                                    final letter =
+                                        tile?['letter'] as String? ?? "";
+                                    final tileId =
+                                        tile?['tileId']?.toString() ?? "";
+
+                                    return Padding(
+                                      padding: const EdgeInsets.all(1.0),
+                                      child: TileWidget(
+                                        letter: letter,
+                                        tileId: tileId,
+                                        onClickTile: (selectedLetter, tileId,
+                                            isSelected) {
+                                          setState(() {
+                                            handleTileSelection(selectedLetter,
+                                                tileId, isSelected);
+                                          });
+                                        },
+                                        isSelected: false,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ],
                           ),
-                        );
-                      },
+                        ),
+
+                        const SizedBox(width: 10),
+
+                        // Game Log Section
+                        Expanded(
+                          flex: 1,
+                          child: GameLog(gameId: widget.gameId),
+                        ),
+                      ],
                     ),
                   ),
+
                   Text(
                     "Selected Items:",
                     style: const TextStyle(fontSize: 16, color: Colors.white),
@@ -380,14 +415,11 @@ class GameScreenState extends State<GameScreen> {
             backgroundColor: Colors.red,
             heroTag: 'clear',
           ),
-          const SizedBox(width: 10), // Use width for horizontal spacing
+          const SizedBox(width: 10),
           FloatingActionButton(
-            onPressed: orderedTiles.isNotEmpty
-                ? _sendTileIds
-                : null, // Disable if no tiles
+            onPressed: orderedTiles.isNotEmpty ? _sendTileIds : null,
             child: const Icon(Icons.send_rounded),
-            backgroundColor:
-                orderedTiles.isNotEmpty ? null : Colors.grey, // Change color
+            backgroundColor: orderedTiles.isNotEmpty ? null : Colors.grey,
             heroTag: 'send',
           ),
           const SizedBox(width: 10),
