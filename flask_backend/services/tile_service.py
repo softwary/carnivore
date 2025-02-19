@@ -3,29 +3,6 @@ from firebase_admin import db
 import services.firebase_service as firebase_service
 from logging_config import logger
 
-def get_tile(game_id, tile_id):
-    """Fetches a specific tile from a game.
-
-    Args:
-        game_id: The ID of the game.
-        tile_id: The ID of the tile.
-
-    Returns:
-        The tile data if found, otherwise None.
-    """
-    game_data = firebase_service.get_game(game_id)
-    if not game_data:
-        logger.debug(f"Game with ID {game_id} does not exist.")
-        return None
-
-    tiles = game_data.get("tiles")
-    if not tiles:
-        return None
-    for tile in tiles:
-        if tile.get("tileId") == tile_id:
-            return tile
-    return tiles.get(tile_id, None)
-
 def update_tiles_location(game_id, tiles, word_id):
     """Updates the location property of the tiles to be the wordId.
 
@@ -60,3 +37,21 @@ def update_tiles_location(game_id, tiles, word_id):
                 logger.debug(f"Tile with ID {tile_id} not found in the game data.")
 
     logger.debug(f"Game ID {game_id} updated successfully.")
+
+def get_tile_from_data(game_data, tile_id):
+    """Gets a tile from the game data directly (avoids extra DB calls).
+
+    Args:
+        game_data (dict): The game data containing tiles.
+        tile_id (str): The ID of the tile to retrieve.
+
+    Returns:
+        dict: The tile data if found, otherwise None.
+    """
+    logger.debug(f"Getting tile with ID {tile_id} from game data.")
+    if not game_data or 'tiles' not in game_data:
+        return None
+    for tile in game_data['tiles']:
+        if tile and tile.get('tileId') == tile_id:
+            return tile
+    return None

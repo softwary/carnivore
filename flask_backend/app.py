@@ -37,6 +37,27 @@ request_adapter = google.auth.transport.requests.Request()
 def verify_firebase_token(f):
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
+        """
+        Wrapper function to verify Firebase token from the request headers.
+
+        This function extracts the 'Authorization' token from the request headers,
+        verifies it using Firebase, and attaches the user ID to the request object.
+
+        Args:
+            *args: Variable length argument list.
+            **kwargs: Arbitrary keyword arguments.
+
+        Returns:
+            Response: A Flask response object with an error message and appropriate
+            HTTP status code if the token is missing, invalid, or expired.
+            Otherwise, it calls the wrapped function with the provided arguments.
+
+        Raises:
+            ValueError: If there is an error during token verification.
+            google.auth.exceptions.InvalidValue: If the token is invalid.
+            google.auth.exceptions.ExpiredToken: If the token has expired.
+            Exception: For any other unexpected errors.
+        """
         token = request.headers.get('Authorization')
         logger.debug(f"verify_firebase_token() --> token= {token[:10]}")
         if not token:
@@ -64,29 +85,42 @@ def verify_firebase_token(f):
         except google.auth.exceptions.ExpiredToken as e:
             logger.error(f"verify_firebase_token() --> ExpiredToken error during token verification: {e}")
             return jsonify({'error': 'Token has expired'}), 401
-        except Exception as e:  # Catch other potential exceptions
-            logger.exception("verify_firebase_token() --> An unexpected error occurred: {e}")  # Log the full traceback
-            return jsonify({'error': 'Authentication failed'}), 500 # Internal Server Error
+        except Exception as e:
+            logger.exception("verify_firebase_token() --> An unexpected error occurred: {e}")
+            return jsonify({'error': 'Authentication failed'}), 500
 
         return f(*args, **kwargs)
     return wrapper
 
 def validate_user_and_game_id_in_request_data(f):
+    """
+    Decorator to validate the presence of user_id and game_id in the request data.
+    This decorator checks if the request contains JSON data with a valid user_id and game_id.
+    It also verifies if the game exists and if the user is part of the game.
+    Args:
+        f (function): The function to be decorated.
+    Returns:
+        function: The wrapped function with added validation.
+    Raises:
+        400: If the request data is missing, or if user_id or game_id is not provided.
+        404: If the game with the provided game_id does not exist.
+        400: If the user is not part of the game.
+    """
     @functools.wraps(f)
     def wrapper(*args, **kwargs):
         data = request.get_json()
         if not data:
             return jsonify({"error": "Missing data in request"}), 400
 
-        user_id = request.user_id  # Assuming you're using the Firebase token decorator
-        game_id = data.get('game_id')  # Or however your game ID is provided
+        user_id = request.user_id
+        game_id = data.get('game_id')
 
         if not user_id:
             return jsonify({"error": "Missing user_id"}), 400
         if not game_id:
             return jsonify({"error": "Missing game_id"}), 400
         
-        # Check if game exists (optional but good practice)
+        # Check if game exists
         game_data = firebase_service.get_game(game_id)
         if not game_data:
             return jsonify({'error': f"Game with ID {game_id} does not exist."}), 404
@@ -95,95 +129,80 @@ def validate_user_and_game_id_in_request_data(f):
         if not player_service.is_player_in_game(user_id, game_id):
             return jsonify({'error': f"User with ID {user_id} is not part of game {game_id}."}), 400        
 
-        return f(*args, **kwargs)  # Call the route handler
+        return f(*args, **kwargs)
     return wrapper
 
 @app.route('/submit-word', methods=['POST'])
 @verify_firebase_token
 @validate_user_and_game_id_in_request_data
-def submit_word():
-    logger.debug(f"")
-    logger.debug(f"")
-    logger.debug(f"")
-    logger.debug(f"#")
-    logger.debug(f"in app.py, submit_word() request = {request}")
-    user_id = request.user_id
-    logger.debug(f"in app.py, submit_word() user_id = {user_id}")
-    data = request.get_json(force=True, silent=False)
-    logger.debug(f"in app.py, submit_word() request.data = {request.data}")
-    game_id = data.get('game_id')
-    tile_ids = data.get('tile_ids')
-    
-    if not tile_ids:
-        return jsonify({"error": "Missing tile_ids in request"}), 400
-    
-    tiles = [tile_service.get_tile(game_id, tile_id) for tile_id in tile_ids]
-    logger.debug(f"[tile_service.py][get_tile] tiles = {tiles}")
-    logger.debug(f"")
-    if not tiles:
-        return jsonify({"error": "Tiles not found in game"}), 404
+def submit_word_route():
+    """Handles word submission requests from the frontend.
 
-    word = ''.join([tile['letter'] for tile in tiles if tile and 'letter' in tile])
-    logger.debug(f"[submit_word] word = {word}")
-    logger.debug(f"")
+    Verifies the user's token, extracts the game ID and tile IDs,
+    and calls the game service to submit the word.  Returns appropriate
+    JSON responses for success and various error conditions.
+    """
+    try:
+        data = request.get_json()
+        logger.debug(f"submit_word_route() --> data= {data}")
+        user_id = request.user_id
+        logger.debug(f"submit_word_route() --> user_id= {user_id}")
+        game_id = data.get('game_id')
+        logger.debug(f"submit_word_route() --> game_id= {game_id}")
+        tile_ids = data.get('tile_ids')
+        logger.debug(f"submit_word_route() --> tile_ids= {tile_ids}")
 
-    # Check game exists
-    game_data = firebase_service.get_game(game_id)
-    # logger.debug(f"[firebase_service.py][get_game] game_data = {game_data}")
-    logger.debug(f"")
-    logger.debug(f"1235479835701501 I MADE IT HERE!")
-    # Determine word submission type
-    submission_type, potential_words_to_steal = game_service.identifyWordSubmissionType(game_id, user_id, tile_ids)
-    logger.debug(f"WOW LOOK AT THAT I MADE IT NOW HERE...submission_type = {submission_type}")
-    logger.debug(f"[game_service.py][identifyWordSubmissionType] submission_type = {submission_type}")
-    logger.debug(f"[game_service.py][identifyWordSubmissionType] potential_words_to_steal = {potential_words_to_steal}")
-    logger.debug(f"")
+        if not game_id:
+            logger.debug("submit_word_route() --> Missing game_id")
+            return jsonify({"error": "Missing game_id"}), 400
+        if not tile_ids:
+            logger.debug("submit_word_route() --> Missing tileIds")
+            return jsonify({"error": "Missing tileIds"}), 400
+        if not isinstance(tile_ids, list):
+            logger.debug("submit_word_route() --> tileIds must be a list")
+            return jsonify({"error": "tileIds must be a list"}), 400
+        if not all(isinstance(tile_id, int) for tile_id in tile_ids):
+            logger.debug("submit_word_route() --> tileIds must be integers")
+            return jsonify({"error": "tileIds must be integers"}), 400
 
-    logger.debug(f"in app.py, word = ({word}),submission_type={submission_type}")
-    logger.debug(f"")
-    # Call appropriate helper function based on submission type
-    if submission_type == game_service.WordSubmissionType.INVALID_UNKNOWN_WHY or \
-        submission_type == game_service.WordSubmissionType.INVALID_LENGTH or \
-        submission_type == game_service.WordSubmissionType.INVALID_NO_MIDDLE or \
-        submission_type == game_service.WordSubmissionType.INVALID_LETTERS_USED or \
-        submission_type == game_service.WordSubmissionType.INVALID_WORD_NOT_IN_DICTIONARY:
-        logger.debug(f"submission_type is {submission_type} hence why I am submitting an invalid word")
-        logger.debug(f"--> game_id = {game_id} | user_id={user_id}")
-        logger.debug(f"--> tile_ids = {tile_ids} | word={word}")
-        result = game_service.submit_invalid_word(game_id, user_id, tile_ids, word)
-        logger.debug(f"[game_service.py][submit_invalid_word] result = {result}")
-        logger.debug(f"")
-    elif submission_type == game_service.WordSubmissionType.MIDDLE_WORD:
-        logger.debug(f"[game_service.py][submit_middle_word] trying to submit a middle word")
-        logger.debug(f"--> game_id = {game_id} | user_id={user_id}")
-        logger.debug(f"--> tile_ids = {tile_ids} | word={word}")
-        result = game_service.submit_middle_word(game_id, user_id, tile_ids, word)
-        logger.debug(f"[game_service.py][submit_middle_word] result = {result}")
-        logger.debug(f"")
-    elif submission_type == game_service.WordSubmissionType.OWN_WORD_IMPROVEMENT:
-        logger.debug(f"OWN_WORD_IMPROVEMENT is happening")
-        result = game_service.improve_own_word(game_id, user_id, tile_ids, word)
-        logger.debug(f"[game_service.py][improve_own_word] result = {result}")
-        logger.debug(f"")
-    elif submission_type == game_service.WordSubmissionType.STEAL_WORD:
-        result = game_service.steal_word(game_id, user_id, tile_ids, word)
-        logger.debug(f"[game_service.py][steal_word] result = {result}")
-        logger.debug(f"")
-    else:
-        return jsonify({'error': 'Could not identify word submission type'}), 400
+        result = game_service.submit_word(game_id, user_id, tile_ids)
+        logger.debug(f"submit_word_route() --> result= {result}")
 
-    if result['success']:
-        return jsonify({'message': result['message']}), 200
-    else:
-        return jsonify({'error': result['message']}), 400  # Or appropriate error code
+        if result['success']:
+            return jsonify(result), 200
+        else:
+            logger.debug(f"submit_word_route() --> Error: {result['message']}")
+            # More specific error handling based on result['message']
+            return jsonify({'error': result['message']}), 400
+
+    except Exception as e:
+        logger.error(f"submit_word_route() --> An unexpected error occurred: {e}")
+        return jsonify({'error': 'An unexpected error occurred'}), 500
+
+class GameNotFoundError(Exception):
+    pass
 
 @app.route('/join-game', methods=['POST'])
 @verify_firebase_token
 def join_game():
-    logger.debug(f"join_game() called")
-    logger.debug(f"join_game() --> request.data= {request.data}")
-    logger.debug(f"join_game() --> request.data= {request.data.decode('utf-8')}")  # Decode to string for debugging
-    user_id = request.user_id  # Get user ID from the verified token
+    """
+    Handles the '/join-game' route for joining a game.
+    This function is decorated with @app.route to handle POST requests to the '/join-game' endpoint.
+    It verifies the Firebase token using the @verify_firebase_token decorator.
+    The function expects a JSON payload with a 'game_id' key. It retrieves the game data from the database
+    and updates the list of players for the specified game. If the user is not already a player in the game,
+    they are added with an initial score of 0 and a turn order.
+    Returns:
+        Response: A JSON response indicating success or failure.
+        - 200: If the user successfully joins the game.
+        - 400: If the 'game_id' is missing from the request data.
+        - 404: If the game with the specified 'game_id' does not exist.
+        - 500: If there is an internal server error.
+    Raises:
+        Exception: If there is an error processing the request.
+    """
+    logger.debug(f"join_game() --> request.data= {request.data.decode('utf-8')}")
+    user_id = request.user_id
     logger.debug(f"join_game() --> user_id (expecting a persistent user id here for google logged in users)= {user_id}")
     try:
         data = request.get_json(force=True, silent=False)
@@ -211,7 +230,7 @@ def join_game():
                 players[user_id] = {'game_id': game_id, 'score': 0, 'turn': turn, 'turnOrder': order}
 
             current_data['players'] = players
-            return current_data  # Return the entire updated game data
+            return current_data
 
         game_ref.transaction(update_players)
 
@@ -225,6 +244,22 @@ def join_game():
 @verify_firebase_token
 @validate_user_and_game_id_in_request_data
 def flip_tile():
+    """
+    Handles the flipping of a tile in the game.
+
+    This endpoint is called when a player wants to flip a tile. It verifies the 
+    Firebase token, validates the user and game ID in the request data, and 
+    processes the tile flip if all conditions are met.
+
+    Returns:
+        Response: A JSON response with the result of the tile flip operation.
+            - On success: {"success": True, "data": updated_game_data}, HTTP status 200.
+            - On failure due to missing game_id or user_id: {"error": "Missing game_id in request data"}, HTTP status 400.
+            - On failure due to non-existent game: {"error": f"Game with ID {game_id} does not exist."}, HTTP status 404.
+            - On failure due to not being the player's turn: {"error": "Not the player's turn", "user_id": user_id}, HTTP status 400.
+            - On failure due to no flippable tile or all letters used: {"error": "No flippable tile available or all letters used"}, HTTP status 400.
+            - On server error: {"error": str(e)}, HTTP status 500.
+    """
     user_id = request.user_id
     logger.debug(f"flip_tile() called")
     logger.debug(f"flip_tile() --> user_id= {user_id}")
@@ -244,17 +279,18 @@ def flip_tile():
             return jsonify({"error": f"Game with ID {game_id} does not exist."}), 404
         if not player_service.is_player_turn(user_id, game_id):
             logger.debug(f"flip_tile() --> Not the player's turn")
-            return jsonify({"error": "Not the player's turn"}), 400
+            return jsonify({"error": "Not the player's turn", "user_id": user_id}), 400
         else:
-            success, updated_game_data = game_service.flip_tile(game_id)
+            success, updated_game_data = game_service.flip_tile(game_id, user_id)
             logger.debug(f"flip_tile() --> success= {success}")
             if success:
-                firebase_service.update_game(game_id, updated_game_data)  # Update game state in Firebase
+                firebase_service.update_game(game_id, updated_game_data)
                 logger.debug(f"flip_tile() --> Game state updated in Firebase")
                 if len(game_data['players']) > 1:
                     updated_game_data = game_service.set_next_player_turn(game_id)
-                    firebase_service.update_game(game_id, updated_game_data)  # Ensure the updated turn is saved
+                    firebase_service.update_game(game_id, updated_game_data) 
                     logger.debug(f"flip_tile() --> Next player's turn set")
+
                 return jsonify({"success": True, "data": updated_game_data}), 200
             else:
                 logger.debug(f"flip_tile() --> No flippable tile available or all letters used")
