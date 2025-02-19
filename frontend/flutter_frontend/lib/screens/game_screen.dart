@@ -204,6 +204,10 @@ class GameScreenState extends State<GameScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
+                      "ESC to deselect tiles | Enter to submit tiles | Spacebar to flip a tile | Click a word to select its tiles",
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
+                    ),
+                    Text(
                       "Player IDs:",
                       style: const TextStyle(fontSize: 16, color: Colors.white),
                     ),
@@ -294,6 +298,11 @@ class GameScreenState extends State<GameScreen> {
                                             selectedTileIds: selectedTiles
                                                 .map((tile) => tile['tileId']!)
                                                 .toSet(),
+                                            onClearSelection: () {
+                                              setState(() {
+                                                selectedTiles.clear();
+                                              });
+                                            },
                                           ),
                                         ),
                                       );

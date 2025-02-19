@@ -9,6 +9,7 @@ class WordCard extends StatefulWidget {
   final Map<String, Color> playerColors;
   final Function(String, String, bool) onClickTile;
   final Set<String> selectedTileIds; // NEW: Selected tile IDs
+  final VoidCallback onClearSelection;
 
   const WordCard({
     Key? key,
@@ -17,7 +18,8 @@ class WordCard extends StatefulWidget {
     required this.onWordTap,
     required this.playerColors,
     required this.onClickTile,
-    required this.selectedTileIds, // NEW: Selected tile IDs
+    required this.selectedTileIds,
+    required this.onClearSelection, // NEW: Selected tile IDs
   }) : super(key: key);
 
   @override
@@ -26,16 +28,23 @@ class WordCard extends StatefulWidget {
 
 class _WordCardState extends State<WordCard> {
   void _selectAllTiles() {
-    for (var tile in widget.tiles) {
-      final letter = tile['letter']?.toString() ?? "?";
-      final tileId = tile['tileId']?.toString() ?? "";
-      widget.onClickTile(letter, tileId, true);
-    }
+    setState(() {
+      // ✅ Deselect all previously selected tiles
+      widget.onClearSelection();
+
+      // ✅ Select all tiles in the new word
+      for (var tile in widget.tiles) {
+        final letter = tile['letter']?.toString() ?? "?";
+        final tileId = tile['tileId']?.toString() ?? "";
+        widget.onClickTile(letter, tileId, true);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final ownerColor = widget.playerColors[widget.currentOwnerUserId] ?? Colors.grey;
+    final ownerColor =
+        widget.playerColors[widget.currentOwnerUserId] ?? Colors.grey;
 
     return GestureDetector(
       onTap: () {
@@ -51,27 +60,33 @@ class _WordCardState extends State<WordCard> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Column(
-            mainAxisSize: MainAxisSize.min, // Prevents excessive vertical stretching
+            mainAxisSize:
+                MainAxisSize.min, // Prevents excessive vertical stretching
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (widget.tiles.isNotEmpty)
                 Container(
                   // height: 40, // Fixed height for tile row to maintain alignment
-                  alignment: Alignment.centerLeft, // Center tiles within the card
+                  alignment:
+                      Alignment.centerLeft, // Center tiles within the card
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: widget.tiles
-                        .where((tile) => tile['letter'] != null && tile['tileId'] != null)
+                        .where((tile) =>
+                            tile['letter'] != null && tile['tileId'] != null)
                         .map<Widget>((tile) {
                       final letter = tile['letter']?.toString() ?? "?";
                       final tileId = tile['tileId']?.toString() ?? "";
                       final tileOwner = tile['ownerUserId'] as String?;
-                      final tileColor = widget.playerColors[tileOwner] ?? Colors.black;
-                      final isSelected = widget.selectedTileIds.contains(tileId);
+                      final tileColor =
+                          widget.playerColors[tileOwner] ?? Colors.black;
+                      final isSelected =
+                          widget.selectedTileIds.contains(tileId);
 
                       return Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 3), // Adjusted spacing
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 3), // Adjusted spacing
                         child: isSelected
                             ? SelectedLetterTile(
                                 letter: letter,
