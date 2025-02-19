@@ -10,6 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter_frontend/widgets/word_widget.dart';
 import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
+import 'package:flutter/services.dart'; // ✅ Needed for key event handling
 
 class GameScreen extends StatefulWidget {
   final String gameId;
@@ -141,23 +142,6 @@ class GameScreenState extends State<GameScreen> {
     }
   }
 
-  // void handleTileSelection(String letter, String tileId, bool isSelected) {
-  //   setState(() {
-  //     final tileData = {'letter': letter, 'tileId': tileId};
-  //     if (isSelected) {
-  //       if (!selectedTiles.any((tile) => tile['tileId'] == tileId)) {
-  //         selectedTiles.add(tileData);
-  //       }
-  //     } else {
-  //       selectedTiles.removeWhere((tile) => tile['tileId'] == tileId);
-  //     }
-  //     if (selectedTiles.isNotEmpty) {
-  //       _handleReorderFinished(
-  //           selectedTiles.map((tile) => int.parse(tile['tileId']!)).toList());
-  //     }
-  //   });
-  // }
-
   void handleTileSelection(String letter, String tileId, bool isSelected) {
     setState(() {
       final tileData = {'letter': letter, 'tileId': tileId};
@@ -194,126 +178,165 @@ class GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text("Game ${widget.gameId}")),
-      body: gameData == null
-          ? const Center(child: CircularProgressIndicator())
-          : Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    "Player IDs:",
-                    style: const TextStyle(fontSize: 16, color: Colors.white),
-                  ),
-                  const SizedBox(height: 5),
-                  Text(
-                    gameData?['players']
-                            ?.entries
-                            .map((entry) =>
-                                '${entry.key} (${entry.value['score'] ?? 0})')
-                            .join(', ') ??
-                        'No players',
-                    style: const TextStyle(fontSize: 14, color: Colors.white),
-                  ),
-                  const SizedBox(height: 5),
-
-                  // Words Section
-                  Expanded(
-                    child: GridView.builder(
-                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        childAspectRatio: 2,
-                        crossAxisSpacing: 5,
-                        mainAxisSpacing: 5,
-                      ),
-                      itemCount: gameData?['words']?.length ?? 0,
-                      itemBuilder: (context, index) {
-                        final wordKey =
-                            gameData?['words']?.keys.toList()[index];
-                        final wordEntryRaw = gameData?['words']?[wordKey];
-
-                        final wordEntry = wordEntryRaw is Map
-                            ? Map<String, dynamic>.from(wordEntryRaw.map(
-                                (key, value) =>
-                                    MapEntry(key.toString(), value)))
-                            : null;
-
-                        final ownerId =
-                            wordEntry?['current_owner_user_id'] as String? ??
-                                '';
-
-                        final tileIds =
-                            (wordEntry?['tileIds'] as List<dynamic>?) ?? [];
-
-                        List<Map<String, dynamic>> tiles = [];
-
-                        if (gameData?['tiles'] is List<dynamic>) {
-                          final allTiles = List<Map<String, dynamic>>.from(
-                            gameData!['tiles'].whereType<Map>().toList(),
-                          );
-
-                          tiles = tileIds
-                              .map((tileId) {
-                                final matchingTile = allTiles.firstWhere(
-                                  (tile) =>
-                                      tile.containsKey('tileId') &&
-                                      tile['tileId'].toString() ==
-                                          tileId.toString(),
-                                  orElse: () => <String, dynamic>{},
-                                );
-
-                                return matchingTile.isEmpty
-                                    ? null
-                                    : matchingTile;
-                              })
-                              .where((tile) => tile != null)
-                              .cast<Map<String, dynamic>>()
-                              .toList();
-                        }
-
-                        return WordCard(
-                          tiles: tiles,
-                          currentOwnerUserId: ownerId,
-                          playerColors: playerColorMap,
-                          onWordTap: (List<dynamic> tiles) {},
-                          onClickTile: handleTileSelection,
-                          selectedTileIds: selectedTiles
-                              .map((tile) => tile['tileId']!)
-                              .toSet(),
-                        );
-                      },
+    return RawKeyboardListener(
+      focusNode: FocusNode(), // ✅ Required for listening to keyboard events
+      autofocus: true, // ✅ Ensures it listens to key presses immediately
+      onKey: (RawKeyEvent event) {
+        if (event is RawKeyDownEvent &&
+            event.logicalKey == LogicalKeyboardKey.enter) {
+          _sendTileIds(); // ✅ Trigger function when Enter is pressed
+        }
+      },
+      child: Scaffold(
+        appBar: AppBar(title: Text("Game ${widget.gameId}")),
+        body: gameData == null
+            ? const Center(child: CircularProgressIndicator())
+            : Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      "Player IDs:",
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
                     ),
-                  ),
-                  const SizedBox(height: 5),
+                    const SizedBox(height: 5),
+                    Text(
+                      gameData?['players']
+                              ?.entries
+                              .map((entry) =>
+                                  '${entry.key.substring(0, 4)} (${entry.value['score'] ?? 0})')
+                              .join(', ') ??
+                          'No players',
+                      style: const TextStyle(fontSize: 14, color: Colors.white),
+                    ),
+                    const SizedBox(height: 5),
 
-                  // Tiles and Game Log section in a Row
-                  Expanded(
-                    child: Row(
-                      children: [
-                        // Tiles Section
-                        Expanded(
-                          flex: 2,
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                gameData?['tiles'] != null ? "Tiles:" : "",
-                                style: const TextStyle(
-                                    fontSize: 16, color: Colors.white),
+                    // Words Section
+                    Flexible(
+                      fit: FlexFit.loose,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          if (gameData?['words'] != null)
+                            Text(
+                              "Words:",
+                              style: const TextStyle(
+                                  fontSize: 16, color: Colors.white),
+                            ),
+                          const SizedBox(height: 5),
+                          IntrinsicHeight(
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Wrap(
+                                alignment: WrapAlignment.start,
+                                spacing: 8,
+                                runSpacing: 8,
+                                children: (gameData?['words'] as List<dynamic>?)
+                                        ?.whereType<Map<String, dynamic>>()
+                                        .map((wordEntry) {
+                                      final ownerId =
+                                          wordEntry['current_owner_user_id']
+                                                  as String? ??
+                                              '';
+                                      final tileIds = (wordEntry['tileIds']
+                                              as List<dynamic>?) ??
+                                          [];
+
+                                      List<Map<String, dynamic>> tiles = [];
+
+                                      if (gameData?['tiles'] is List<dynamic>) {
+                                        final allTiles =
+                                            List<Map<String, dynamic>>.from(
+                                          gameData!['tiles']
+                                              .whereType<Map>()
+                                              .toList(),
+                                        );
+
+                                        tiles = tileIds
+                                            .map((tileId) {
+                                              final matchingTile =
+                                                  allTiles.firstWhere(
+                                                (tile) =>
+                                                    tile.containsKey(
+                                                        'tileId') &&
+                                                    tile['tileId'].toString() ==
+                                                        tileId.toString(),
+                                                orElse: () =>
+                                                    <String, dynamic>{},
+                                              );
+                                              return matchingTile.isEmpty
+                                                  ? null
+                                                  : matchingTile;
+                                            })
+                                            .where((tile) => tile != null)
+                                            .cast<Map<String, dynamic>>()
+                                            .toList();
+                                      }
+
+                                      return IntrinsicWidth(
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 4.0),
+                                          child: WordCard(
+                                            tiles: tiles,
+                                            currentOwnerUserId: ownerId,
+                                            playerColors: playerColorMap,
+                                            onWordTap: (List<dynamic> tiles) {},
+                                            onClickTile: handleTileSelection,
+                                            selectedTileIds: selectedTiles
+                                                .map((tile) => tile['tileId']!)
+                                                .toSet(),
+                                          ),
+                                        ),
+                                      );
+                                    }).toList() ??
+                                    [],
                               ),
-                              const SizedBox(height: 5),
-                              Expanded(
-                                child: GridView.builder(
-                                  gridDelegate:
-                                      const SliverGridDelegateWithFixedCrossAxisCount(
-                                    crossAxisCount: 12,
-                                    childAspectRatio: 1.0,
-                                    crossAxisSpacing: 1.0,
-                                    mainAxisSpacing: 1.0,
-                                  ),
-                                  itemCount: (gameData?['tiles'] as List?)
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+
+                    // Tiles and Game Log section in a Row
+                    Expanded(
+                      child: Row(
+                        children: [
+                          // Tiles Section
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  gameData?['tiles'] != null ? "Tiles:" : "",
+                                  style: const TextStyle(
+                                      fontSize: 16, color: Colors.white),
+                                ),
+                                const SizedBox(height: 5),
+                                Expanded(
+                                  child: GridView.builder(
+                                    gridDelegate:
+                                        const SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: 12,
+                                      childAspectRatio: 1.0,
+                                      crossAxisSpacing: 1.0,
+                                      mainAxisSpacing: 1.0,
+                                    ),
+                                    itemCount: (gameData?['tiles'] as List?)
+                                            ?.where((tile) =>
+                                                tile != null &&
+                                                tile is Map &&
+                                                tile['location'] == 'middle' &&
+                                                (tile['letter'] as String?)
+                                                        ?.isNotEmpty ==
+                                                    true)
+                                            .length ??
+                                        0,
+                                    itemBuilder: (context, index) {
+                                      final tiles = (gameData?['tiles']
+                                              as List?)
                                           ?.where((tile) =>
                                               tile != null &&
                                               tile is Map &&
@@ -321,133 +344,109 @@ class GameScreenState extends State<GameScreen> {
                                               (tile['letter'] as String?)
                                                       ?.isNotEmpty ==
                                                   true)
-                                          .length ??
-                                      0,
-                                  itemBuilder: (context, index) {
-                                    final tiles = (gameData?['tiles'] as List?)
-                                        ?.where((tile) =>
-                                            tile != null &&
-                                            tile is Map &&
-                                            tile['location'] == 'middle' &&
-                                            (tile['letter'] as String?)
-                                                    ?.isNotEmpty ==
-                                                true)
-                                        .toList();
+                                          .toList();
 
-                                    if (tiles == null ||
-                                        index >= tiles.length) {
-                                      return const SizedBox.shrink();
-                                    }
+                                      if (tiles == null ||
+                                          index >= tiles.length) {
+                                        return const SizedBox.shrink();
+                                      }
 
-                                    final tile =
-                                        tiles[index] as Map<dynamic, dynamic>?;
-                                    final letter =
-                                        tile?['letter'] as String? ?? "";
-                                    final tileId =
-                                        tile?['tileId']?.toString() ?? "";
+                                      final tile = tiles[index]
+                                          as Map<dynamic, dynamic>?;
+                                      final letter =
+                                          tile?['letter'] as String? ?? "";
+                                      final tileId =
+                                          tile?['tileId']?.toString() ?? "";
 
-                                    return Padding(
-                                      padding: const EdgeInsets.all(1.0),
-                                      child: TileWidget(
-                                        letter: letter,
-                                        tileId: tileId,
-                                        onClickTile: (selectedLetter, tileId,
-                                            isSelected) {
-                                          setState(() {
-                                            handleTileSelection(selectedLetter,
-                                                tileId, isSelected);
-                                          });
-                                        },
-                                        isSelected: false,
-                                      ),
-                                    );
-                                  },
+                                      return Padding(
+                                        padding: const EdgeInsets.all(1.0),
+                                        child: TileWidget(
+                                          letter: letter,
+                                          tileId: tileId,
+                                          onClickTile: (selectedLetter, tileId,
+                                              isSelected) {
+                                            setState(() {
+                                              handleTileSelection(
+                                                  selectedLetter,
+                                                  tileId,
+                                                  isSelected);
+                                            });
+                                          },
+                                          isSelected: false,
+                                        ),
+                                      );
+                                    },
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
-                        ),
 
-                        const SizedBox(width: 10),
+                          const SizedBox(width: 10),
 
-                        // Game Log Section
-                        Expanded(
-                          flex: 1,
-                          child: GameLog(gameId: widget.gameId),
-                        ),
-                      ],
+                          // Game Log Section
+                          Expanded(
+                            flex: 1,
+                            child: GameLog(gameId: widget.gameId),
+                          ),
+                        ],
+                      ),
                     ),
-                  ),
 
-                  Text(
-                    "Selected Items:",
-                    style: const TextStyle(fontSize: 16, color: Colors.white),
-                  ),
-                  HorizontalReorderableListView(
-                    items: selectedTiles,
-                    itemBuilder: (tile) {
-                      return SelectedLetterTile(
-                        letter: tile['letter']!,
-                        onRemove: () {
-                          setState(() {
-                            selectedTiles.remove(tile);
-                            orderedTiles.remove(int.parse(tile['tileId']!));
-                          });
-                        },
-                      );
-                    },
-                    onReorderFinished: _handleReorderFinished,
-                  ),
-                ],
+                    Text(
+                      "Selected Tiles:",
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
+                    ),
+                    HorizontalReorderableListView(
+                      items: selectedTiles,
+                      itemBuilder: (tile) {
+                        return SelectedLetterTile(
+                          letter: tile['letter']!,
+                          onRemove: () {
+                            setState(() {
+                              selectedTiles.remove(tile);
+                              orderedTiles.remove(int.parse(tile['tileId']!));
+                            });
+                          },
+                        );
+                      },
+                      onReorderFinished: _handleReorderFinished,
+                    ),
+                  ],
+                ),
               ),
+        floatingActionButton: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            FloatingActionButton(
+              onPressed: () {
+                setState(() {
+                  selectedTiles.clear();
+                  orderedTiles.clear();
+                });
+              },
+              child: const Icon(Icons.clear),
+              backgroundColor: Colors.red,
+              heroTag: 'clear',
             ),
-      floatingActionButton: Row(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          FloatingActionButton(
-            onPressed: () {
-              setState(() {
-                selectedTiles.clear();
-                orderedTiles.clear();
-              });
-            },
-            child: const Icon(Icons.clear),
-            backgroundColor: Colors.red,
-            heroTag: 'clear',
-          ),
-          const SizedBox(width: 10),
-          FloatingActionButton(
-            onPressed: orderedTiles.isNotEmpty ? _sendTileIds : null,
-            child: const Icon(Icons.send_rounded),
-            backgroundColor: orderedTiles.isNotEmpty ? null : Colors.grey,
-            heroTag: 'send',
-          ),
-          const SizedBox(width: 10),
-          FloatingActionButton(
-            onPressed: _flipNewTile,
-            child: const Icon(Icons.refresh_rounded),
-            backgroundColor: Colors.yellow,
-            heroTag: 'flip',
-          ),
-        ],
+            const SizedBox(width: 10),
+            FloatingActionButton(
+              onPressed: orderedTiles.isNotEmpty ? _sendTileIds : null,
+              child: const Icon(Icons.send_rounded),
+              backgroundColor: orderedTiles.isNotEmpty ? null : Colors.grey,
+              heroTag: 'send',
+            ),
+            const SizedBox(width: 10),
+            FloatingActionButton(
+              onPressed: _flipNewTile,
+              child: const Icon(Icons.refresh_rounded),
+              backgroundColor: Colors.yellow,
+              foregroundColor: Colors.black,
+              heroTag: 'flip',
+            ),
+          ],
+        ),
       ),
     );
   }
-}
-
-String _buildWordHistoryTooltip(List<dynamic> wordHistory) {
-  final buffer = StringBuffer();
-  final formatter = DateFormat('yyyy-MM-dd HH:mm:ss'); // Format the timestamp
-
-  for (var entry in wordHistory.reversed) {
-    // Show history from latest to oldest
-    final timestamp = DateTime.fromMillisecondsSinceEpoch(entry['timestamp']);
-    final formattedTime =
-        formatter.format(timestamp.toLocal()); // Format the date and time
-    buffer.writeln("Word: ${entry['word']}");
-    buffer.writeln("Player: ${entry['playerId']}");
-    buffer.writeln("Time: $formattedTime"); // Add the formatted timestamp
-    buffer.writeln("-------------------");
-  }
-  return buffer.toString();
 }
