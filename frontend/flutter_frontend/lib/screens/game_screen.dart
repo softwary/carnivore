@@ -42,6 +42,9 @@ class GameScreenState extends State<GameScreen> {
   void initState() {
     super.initState();
     fetchGameData();
+
+    // ✅ Add a RawKeyboardListener to detect Backspace key
+    FocusManager.instance.primaryFocus?.unfocus();
   }
 
   void fetchGameData() {
@@ -178,22 +181,33 @@ class GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return RawKeyboardListener(
-      focusNode: FocusNode(),
+    return Focus(
       autofocus: true,
-      onKey: (RawKeyEvent event) {
-        if (event is RawKeyDownEvent) {
-          if (event.logicalKey == LogicalKeyboardKey.enter) {
-            _sendTileIds(); // ✅ Submit tiles on Enter key
-          } else if (event.logicalKey == LogicalKeyboardKey.escape) {
+      onKey: (FocusNode node, RawKeyEvent event) {
+      if (event is RawKeyDownEvent) {
+        if (event.logicalKey == LogicalKeyboardKey.escape) {
+          setState(() {
+            selectedTiles.clear(); // ✅ ESC clears selected tiles
+          });
+        } else if (event.logicalKey == LogicalKeyboardKey.space) {
+          _flipNewTile(); // ✅ Space flips a new tile
+        } else if (event.logicalKey == LogicalKeyboardKey.backspace) {
+          if (selectedTiles.isNotEmpty) {
             setState(() {
-              selectedTiles.clear(); // ✅ Clear selected tiles on ESC key
+              selectedTiles.removeLast(); // ✅ Backspace removes last tile
             });
-          } else if (event.logicalKey == LogicalKeyboardKey.space) {
-            _flipNewTile(); // ✅ Flip a new tile on Space key
+          }
+        } else if (event.logicalKey == LogicalKeyboardKey.enter) {
+          // flip tile if selected Tiles are not selected
+          if (!selectedTiles.isNotEmpty) {
+            _flipNewTile();
+          } else {
+            _sendTileIds(); // ✅ Enter submits the word if tiles are selected
           }
         }
-      },
+      }
+      return KeyEventResult.handled;
+    },
       child: Scaffold(
         appBar: AppBar(title: Text("Game ${widget.gameId}")),
         body: gameData == null
@@ -319,7 +333,6 @@ class GameScreenState extends State<GameScreen> {
                     Expanded(
                       child: Row(
                         children: [
-                          // Tiles Section
                           Expanded(
                             flex: 2,
                             child: Column(
@@ -397,10 +410,7 @@ class GameScreenState extends State<GameScreen> {
                               ],
                             ),
                           ),
-
                           const SizedBox(width: 10),
-
-                          // Game Log Section
                           Expanded(
                             flex: 1,
                             child: GameLog(gameId: widget.gameId),
