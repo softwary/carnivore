@@ -10,7 +10,7 @@ import 'package:intl/intl.dart';
 import 'package:flutter_frontend/widgets/word_widget.dart';
 import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
-import 'package:flutter/services.dart'; // ✅ Needed for key event handling
+import 'package:flutter/services.dart';
 
 class GameScreen extends StatefulWidget {
   final String gameId;
@@ -189,6 +189,8 @@ class GameScreenState extends State<GameScreen> {
             setState(() {
               selectedTiles.clear(); // ✅ Clear selected tiles on ESC key
             });
+          } else if (event.logicalKey == LogicalKeyboardKey.space) {
+            _flipNewTile(); // ✅ Flip a new tile on Space key
           }
         }
       },
