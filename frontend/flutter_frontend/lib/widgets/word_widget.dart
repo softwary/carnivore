@@ -8,8 +8,10 @@ class WordCard extends StatefulWidget {
   final Function(List<dynamic>) onWordTap;
   final Map<String, Color> playerColors;
   final Function(String, String, bool) onClickTile;
-  final Set<String> selectedTileIds; // NEW: Selected tile IDs
+  final Set<String> officiallySelectedTileIds;
+  final Set<String> potentiallySelectedTileIds;
   final VoidCallback onClearSelection;
+  final double tileSize;
 
   const WordCard({
     Key? key,
@@ -18,8 +20,10 @@ class WordCard extends StatefulWidget {
     required this.onWordTap,
     required this.playerColors,
     required this.onClickTile,
-    required this.selectedTileIds,
-    required this.onClearSelection, // NEW: Selected tile IDs
+    required this.officiallySelectedTileIds,
+    required this.potentiallySelectedTileIds,
+    required this.onClearSelection,
+    required this.tileSize,
   }) : super(key: key);
 
   @override
@@ -29,10 +33,8 @@ class WordCard extends StatefulWidget {
 class _WordCardState extends State<WordCard> {
   void _selectAllTiles() {
     setState(() {
-      // ✅ Deselect all previously selected tiles
       widget.onClearSelection();
 
-      // ✅ Select all tiles in the new word
       for (var tile in widget.tiles) {
         final letter = tile['letter']?.toString() ?? "?";
         final tileId = tile['tileId']?.toString() ?? "";
@@ -45,7 +47,6 @@ class _WordCardState extends State<WordCard> {
   Widget build(BuildContext context) {
     final ownerColor =
         widget.playerColors[widget.currentOwnerUserId] ?? Colors.grey;
-
     return GestureDetector(
       onTap: () {
         _selectAllTiles();
@@ -58,17 +59,16 @@ class _WordCardState extends State<WordCard> {
           borderRadius: BorderRadius.circular(8),
         ),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Column(
             mainAxisSize:
-                MainAxisSize.min, // Prevents excessive vertical stretching
+                MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (widget.tiles.isNotEmpty)
                 Container(
-                  // height: 40, // Fixed height for tile row to maintain alignment
                   alignment:
-                      Alignment.centerLeft, // Center tiles within the card
+                      Alignment.centerLeft,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -82,28 +82,25 @@ class _WordCardState extends State<WordCard> {
                       final tileColor =
                           widget.playerColors[tileOwner] ?? Colors.black;
                       final isSelected =
-                          widget.selectedTileIds.contains(tileId);
+                          widget.officiallySelectedTileIds.contains(tileId);
+                      final isHighlighted =
+                          widget.potentiallySelectedTileIds.contains(tileId);
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 3), // Adjusted spacing
-                        child: isSelected
-                            ? SelectedLetterTile(
-                                letter: letter,
-                                onRemove: () {
-                                  widget.onClickTile(letter, tileId, false);
-                                },
-                                tileSize: 36, // Ensuring consistent tile size
-                                textColor: tileColor, // Pass text color
-                              )
-                            : TileWidget(
-                                letter: letter,
-                                tileId: tileId,
-                                onClickTile: widget.onClickTile,
-                                isSelected: isSelected,
-                                backgroundColor: tileColor,
-                                tileSize: 36, // Ensuring consistent tile size
-                              ),
+                            horizontal: 1), // Adjusted spacing
+                        child: TileWidget(
+                          letter: letter,
+                          tileId: tileId,
+                          tileSize: widget.tileSize,
+                          onClickTile: widget.onClickTile,
+                          isSelected: isSelected,
+                          backgroundColor: isSelected
+                              ? Color(0xFF4A148C)
+                              : isHighlighted
+                                  ? tileColor.withOpacity(0.25)
+                                  : tileColor,
+                        ),
                       );
                     }).toList(),
                   ),
@@ -112,16 +109,10 @@ class _WordCardState extends State<WordCard> {
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Text(
-                    "No tiles available",
+                    "No words submitted yet. Who will draw first blood?",
                     style: TextStyle(color: Colors.red, fontSize: 12),
                   ),
                 ),
-              const SizedBox(height: 6),
-              Text(
-                "Submitted by: ${widget.currentOwnerUserId.substring(0, 4)}",
-                style: TextStyle(fontSize: 10, color: ownerColor),
-                textAlign: TextAlign.left,
-              ),
             ],
           ),
         ),
