@@ -270,14 +270,19 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 logger.debug(f"[submit_word] Player turn set to: {user_id}")
 
         # 9. Add Game Action
-        add_game_action(current_data, game_id, {
+        action = {
             'type': submission_type.name,
             'playerId': user_id,
             'timestamp': int(datetime.now().timestamp() * 1000),
             'wordId': word_id,
             'word': word,
             'tileIds': tile_ids
-        })
+        }
+        # include robbed_user_id if applicable
+        if robbed_user_id:
+            action['robbedUserId'] = robbed_user_id
+
+        add_game_action(current_data, game_id, action)
         logger.debug(
             f"[submit_word] Game action added: {submission_type.name}")
 

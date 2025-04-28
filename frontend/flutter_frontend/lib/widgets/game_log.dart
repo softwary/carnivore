@@ -51,6 +51,7 @@ class _GameLogState extends State<GameLog> {
           'timestamp': logData['timestamp'] ?? 0,
           'tileLetter': logData['tileLetter'],
           'tileId': logData['tileId'],
+          'robbedUserId': logData['robbedUserId'] ?? '',
         };
       }).toList();
 
@@ -174,7 +175,9 @@ class _GameLogState extends State<GameLog> {
       case 'OWN_WORD_IMPROVEMENT':
         return "$username submitted:";
       case 'STEAL_WORD':
-        return "$username stole!";
+        final robbedId = log['robbedUserId'] as String;
+        final robbedName = widget.playerIdToUsernameMap[robbedId] ?? robbedId;
+        return "$username stole from $robbedName!";
       case 'INVALID_LENGTH':
         return "$username submitted a word without enough letters:";
       case 'INVALID_NO_MIDDLE':
