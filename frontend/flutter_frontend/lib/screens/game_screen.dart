@@ -9,6 +9,7 @@ import 'package:flutter_frontend/widgets/game_log.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_frontend/widgets/player_words.dart';
 import 'package:flutter_frontend/services/api_service.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class GameScreen extends StatefulWidget {
   final String gameId;
@@ -20,13 +21,23 @@ class GameScreen extends StatefulWidget {
   GameScreenState createState() => GameScreenState();
 }
 
-class GameScreenState extends State<GameScreen> {
+class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
-  late DatabaseReference gameRef;
-  Map<String, dynamic>? gameData;
+  String? currentUserId;
 
-  List<Map<String, String>> inputtedLetters = [];
-  Set<String> officiallySelectedTileIds = {};
+  late DatabaseReference gameRef;
+  String currentPlayerTurn = '';
+  Map<String, dynamic>? gameData;
+  List<Tile> allTiles = [];
+  List<Tile> middleTiles = [];
+  late int tilesLeftCount;
+
+  late AnimationController _flipController;
+  late Animation<double> _flipAnimation;
+  bool isFlipping = false;
+
+  List<Tile> inputtedLetters = [];
+  Set<String> officiallySelectedTileIds = <String>{};
   Set<String> usedTileIds =
       {}; // Track used tile IDs to avoid duplicate assignment
   Set<String> potentiallySelectedTileIds =
@@ -35,6 +46,7 @@ class GameScreenState extends State<GameScreen> {
   List<Map<String, dynamic>> playerWords = [];
   List<String> potentialMatches = []; // Possible tiles that match typed input
   Map<String, Color> playerColorMap = {}; // Store player colors
+  Map<String, String> playerIdToUsernameMap = {};
   List<Color> playerColors = [
     Color(0xFF1449A2),
     Color(0xFF67bcaf),
@@ -49,33 +61,80 @@ class GameScreenState extends State<GameScreen> {
   @override
   void initState() {
     super.initState();
+    currentUserId = FirebaseAuth.instance.currentUser?.uid;
     fetchGameData();
 
+    _flipController = AnimationController(
+      duration: const Duration(milliseconds: 500),
+      vsync: this,
+    );
+
+    _flipAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
+      CurvedAnimation(parent: _flipController, curve: Curves.easeInOut),
+    );
+
+    _flipController.addStatusListener((status) {
+      if (status == AnimationStatus.completed) {
+        setState(() => isFlipping = false);
+      }
+    });
+
     FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  @override
+  void dispose() {
+    _flipController.dispose();
+    super.dispose();
+  }
+
+  void clearInput() {
+    setState(() {
+      inputtedLetters.clear();
+      potentiallySelectedTileIds.clear();
+      potentialMatches.clear();
+      officiallySelectedTileIds.clear();
+      usedTileIds.clear();
+    });
   }
 
   void fetchGameData() {
     gameRef = FirebaseDatabase.instance.ref('games/${widget.gameId}');
     gameRef.onValue.listen((event) {
       final data = event.snapshot.value;
+
       if (data is LinkedHashMap) {
         setState(() {
-          gameData = jsonDecode(jsonEncode(
-              data)); // Convert LinkedHashMap to Map<String, dynamic>
+          gameData = jsonDecode(jsonEncode(data));
+          allTiles = List<Tile>.from(
+            (gameData!['tiles'] as List<dynamic>).map((item) {
+              return Tile.fromMap(item as Map<String, dynamic>);
+            }),
+          );
+          currentPlayerTurn = gameData?['currentPlayerTurn'] ?? '';
+          middleTiles =
+              allTiles.where((tile) => tile.location == 'middle').toList();
 
-          // Ensure gameData contains 'players' and 'words' keys and they are not null
+          tilesLeftCount = allTiles.where((tile) => (tile.letter?.isEmpty ?? true)).length;
+
+          // Initialize playerColorMap
+          final players = gameData!['players'] as Map<String, dynamic>;
+          int colorIndex = 0;
+          players.forEach((playerId, playerData) {
+            playerColorMap[playerId] =
+                playerColors[colorIndex % playerColors.length];
+            // print the username
+            playerIdToUsernameMap[playerId] = playerData['username'];
+            colorIndex++;
+          });
+
+          // Ensure gameData contains 'players', 'words', and 'tiles' keys and they are not null
           if (gameData!.containsKey('players') &&
               gameData!['players'] != null &&
               gameData!.containsKey('words') &&
-              gameData!['words'] != null) {
-            // Initialize playerColorMap
-            final players = gameData!['players'] as Map<String, dynamic>;
-            int colorIndex = 0;
-            players.forEach((playerId, playerData) {
-              playerColorMap[playerId] =
-                  playerColors[colorIndex % playerColors.length];
-              colorIndex++;
-            });
+              gameData!['words'] != null &&
+              gameData!.containsKey('tiles') &&
+              gameData!['tiles'] != null) {
             // Process player words
             playerWords = processPlayerWords(
               Map<String, dynamic>.from(gameData!['players']),
@@ -96,11 +155,29 @@ class GameScreenState extends State<GameScreen> {
                 .where((word) => word['playerId'] != userId)
                 .toList()
               ..addAll(playerWords.where((word) => word['playerId'] == userId));
+
+            // Process tiles
+            try {
+              gameData!['tiles'] = List<Tile>.from(
+                (gameData!['tiles'] as List<dynamic>).map((item) {
+                  return Tile.fromMap(item as Map<String, dynamic>);
+                }),
+              );
+            } catch (e) {
+              print("Error converting tiles: $e");
+              gameData!['tiles'] =
+                  <Tile>[]; // Initialize as empty list in case of error
+            }
           } else {
-            // Handle the case where 'players' or 'words' is null
+            // Handle the case where 'players', 'words', or 'tiles' is null
             playerWords = [];
+            gameData ??= {}; // Ensure gameData is not null
+            gameData!['tiles'] = <Tile>[];
           }
         });
+      } else {
+        print(
+            "Data is not a LinkedHashMap: $data"); // Log if data is not a LinkedHashMap
       }
     });
   }
@@ -122,136 +199,212 @@ class GameScreenState extends State<GameScreen> {
     return playerWords;
   }
 
-  Future<void> _sendTileIds() async {
-    print(
-        "_sendTileIds...the officiallySelectedTileIds and the inputtedLetters should be equal. They are: $officiallySelectedTileIds and $inputtedLetters");
+  /// Helper function to find tile location
+  String _findTileLocation(dynamic tileId) {
+    return allTiles
+            .firstWhere(
+              (t) => t.tileId == tileId,
+              orElse: () => Tile(letter: '', tileId: '', location: ''),
+            )
+            .location ??
+        '';
+  }
 
-    if (inputtedLetters.isEmpty || inputtedLetters.length < 3) {
+  Future<void> _sendTileIds() async {
+    // Assign locations based on `tileId`
+    for (var tile in inputtedLetters) {
+      // print type of inputtedLetters tileId
+      tile.location = _findTileLocation(tile.tileId);
+    }
+
+    print(
+        "💚💚💚 Sending tileIds... officiallySelectedTileIds: $officiallySelectedTileIds, inputtedLetters: ${inputtedLetters.map((tile) => {
+              'letter': tile.letter,
+              'location': tile.location,
+              'tileId': tile.tileId
+            }).toList()}");
+
+    // Exit early if not enough letters
+    if (inputtedLetters.length < 3) return;
+
+    // Convert `tileId` from String to int if needed
+    for (var tile in inputtedLetters) {
+      if (tile.tileId is String) {
+        tile.tileId = int.tryParse(tile.tileId as String) ?? 'invalid';
+      }
+    }
+
+    // Ensure all tiles come from the same location or include 'middle'
+    final distinctLocations =
+        inputtedLetters.map((tile) => tile.location).toSet();
+    print("Distinct locations of tileIds to submit: $distinctLocations");
+
+    if (distinctLocations.length > 1 && !distinctLocations.contains('middle')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text("You can't use letters from multiple words")),
+      );
+      return;
+      // if the distinct location from a word is using the ENTIRE word, then throw error
+    } else if (distinctLocations.length > 1) {
+      // Get the length of the word from the non "middle" location
+      final wordId = distinctLocations.firstWhere(
+        (location) => location != 'middle' && location != '',
+        orElse: () => '',
+      );
+      print("This is the wordId trying to be stolen/taken: $wordId");
+      // get this word out of gameData
+      final wordData = (gameData?['words'] as List).firstWhere(
+        (word) => word['wordId'] == wordId,
+        orElse: () => null,
+      );
+      final wordLength = wordData['tileIds'].length;
+      // if the amount of letters in inputtedLetters with their location = this wordId, does not equal the wordLength, then throw error
+      final inputtedLettersFromWord =
+          inputtedLetters.where((tile) => tile.location == wordId).toList();
+      if (inputtedLettersFromWord.length != wordLength) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+              content: Text("You must use the entire word or none of it")),
+        );
+        return;
+      }
+    }
+
+    // Retrieve user token
+    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
+    if (token == null) {
+      print('Error: Token is null');
       return;
     }
-    final token = await FirebaseAuth.instance.currentUser!.getIdToken();
-    if (token != null) {
-      try {
-        final response = await _apiService.sendTileIds(
-            widget.gameId, token, inputtedLetters);
-        if (response.statusCode == 200) {
-          final Map<String, dynamic> responseData = jsonDecode(response.body);
-          setState(() {
-            print("Response Data: $responseData");
-            final submissionType = responseData['submission_type'];
-            final submittedWord = responseData['word'];
-            print("Submission Type: $submissionType");
-            // by default clear everything
-            inputtedLetters.clear();
 
-            usedTileIds.clear();
-            potentiallySelectedTileIds.clear();
-            officiallySelectedTileIds.clear();
+    try {
+      final response =
+          await _apiService.sendTileIds(widget.gameId, token, inputtedLetters);
 
-            switch (submissionType) {
-              case "INVALID_LENGTH":
-                // Put a snackbar that says it is an invalid length (too short or too long)
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$submittedWord was too short'),
-                  ),
-                );
-                break;
-              case "INVALID_UNKNOWN_WHY":
-                break;
-              case "INVALID_NO_MIDDLE":
-                // Put a snackbar that says it is an invalid length (too short or too long)
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text(
-                        '$submittedWord did not use a letter from the middle'),
-                  ),
-                );
-                break;
-              case "INVALID_LETTERS_USED":
-                break;
-              case "INVALID_WORD_NOT_IN_DICTIONARY":
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(
-                    content: Text('$submittedWord is not in the dictionary'),
-                  ),
-                );
-                break;
-              case "MIDDLE_WORD":
-                break;
-              case "OWN_WORD_IMPROVEMENT":
-                break;
-              case "STEAL_WORD":
-                break;
-              default:
-            }
-          });
-        } else {
+      if (response.statusCode == 200) {
+        final responseData = jsonDecode(response.body);
+        final submissionType = responseData['submission_type'];
+        final submittedWord = responseData['word'];
+
+        print("💞 Response Data: $responseData");
+        print("💞 Submission Type: $submissionType");
+
+        // Clear input by default
+        setState(clearInput);
+
+        // Handle specific response cases
+        final errorMessages = {
+          "INVALID_LENGTH": "$submittedWord was too short",
+          "INVALID_NO_MIDDLE":
+              "$submittedWord did not use a letter from the middle",
+          "INVALID_WORD_NOT_IN_DICTIONARY":
+              "$submittedWord is not in the dictionary"
+        };
+
+        if (errorMessages.containsKey(submissionType)) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content:
-                  Text('HTTP ${response.statusCode} - ${response.body} Error'),
-            ),
-          );
-          inputtedLetters.clear();
-
-          usedTileIds.clear();
-          potentiallySelectedTileIds.clear();
-          print(
-              'Error sending tileIds: ${response.statusCode} - ${response.body}');
+              SnackBar(content: Text(errorMessages[submissionType]!)));
         }
-      } catch (e) {
-        print('Error sending tileIds: $e');
+      } else {
+        print(
+            'Error sending tileIds: ${response.statusCode} - ${response.body}');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+              content:
+                  Text('HTTP ${response.statusCode} - ${response.body} Error')),
+        );
+        setState(clearInput);
       }
-    } else {
-      print('Error: Token is null');
+    } catch (e) {
+      print('💞 Error sending tileIds: $e');
     }
 
-    // Clear selected tiles and update UI
-    setState(() {
-      inputtedLetters.clear();
-      potentiallySelectedTileIds.clear();
-      potentialMatches.clear();
-    });
+    // Ensure UI is updated after processing
+    setState(clearInput);
   }
 
   Future<void> _flipNewTile() async {
     final token = await FirebaseAuth.instance.currentUser!.getIdToken();
     if (token != null) {
       await _apiService.flipNewTile(widget.gameId, token);
+      // set state to update the UI
+      setState(() {});
     } else {
       print('Error: Token is null');
     }
   }
 
-  // This is broken in that if you backspace the highlight doesn't go away
+  void _syncTileIdsWithInputtedLetters() {
+    // 🔄 Create a temporary set to track unique tile assignments
+    Set<String> assignedTileIds = {};
+
+    setState(() {
+      officiallySelectedTileIds.clear();
+
+      for (var tile in inputtedLetters) {
+        if (tile.tileId != 'TBD' && tile.tileId != 'invalid') {
+          // Ensure no duplicate assignments for letters appearing multiple times
+          if (!assignedTileIds.contains(tile.tileId)) {
+            assignedTileIds.add(tile.tileId);
+            officiallySelectedTileIds.add(tile.tileId);
+          } else {
+            // Find an alternative tile ID for this duplicate letter
+            final availableTile = allTiles.firstWhere(
+              (t) =>
+                  t.letter == tile.letter &&
+                  !assignedTileIds.contains(t.tileId.toString()),
+              orElse: () => Tile(letter: '', tileId: '', location: ''),
+            );
+
+            if (availableTile.tileId != '') {
+              tile.tileId = availableTile.tileId.toString();
+              assignedTileIds.add(tile.tileId);
+              officiallySelectedTileIds.add(tile.tileId);
+            } else {
+              print(
+                  "❌ No available tile found for duplicate letter: ${tile.letter}");
+            }
+          }
+        }
+      }
+    });
+
+    print(
+        "🔄🔄✅🔄🔄 Inputted Letters (after sync): ${inputtedLetters.map((t) => '${t.letter}: ${t.tileId}').toList()}");
+
+    print(
+        "🔄🔄🔄 Fixed Sync: officiallySelectedTileIds = $officiallySelectedTileIds");
+  }
+
   void _handleBackspace() {
     if (inputtedLetters.isNotEmpty) {
       final lastTile = inputtedLetters.removeLast();
 
-      if (lastTile['tileId'] == "TBD") {
+      if (lastTile.tileId == "TBD") {
         // 🔹 If the tile was typed, find one matching tile to unhighlight
-        final String backspacedLetter = lastTile['letter']!;
+        final String backspacedLetter = lastTile.letter!;
 
         setState(() {
           // 🔹 Find the first occurrence of this letter in potentiallySelectedTileIds and remove it
           final highlightedTileIdsList = potentiallySelectedTileIds.toList();
-          for (int i = 0; i < highlightedTileIdsList.length; i++) {
+          for (int i = 0; i < highlightedTileIdsList.length;) {
             final tileId = highlightedTileIdsList[i];
 
-            final tile = (gameData?['tiles'] as List).firstWhere(
-              (t) => t['tileId'].toString() == tileId,
-              orElse: () => {},
+            final tile = allTiles.firstWhere(
+              (t) =>
+                  t.letter == backspacedLetter && t.tileId.toString() == tileId,
+              orElse: () => Tile(letter: '', tileId: '', location: ''),
             );
 
             potentiallySelectedTileIds
-                .remove(tileId); // ✅ Remove only one occurrence
+                .remove(tile.tileId); // ✅ Remove only one occurrence
             break; // ✅ Stop after removing one
           }
         });
       } else {
         // 🔹 If the tile was selected, unselect it
-        final tileId = lastTile['tileId']!;
+        final tileId = lastTile.tileId!;
         setState(() {
           officiallySelectedTileIds.remove(tileId);
           potentiallySelectedTileIds.remove(tileId);
@@ -262,17 +415,80 @@ class GameScreenState extends State<GameScreen> {
     setState(() {}); // Force UI refresh
   }
 
-  void handleTileSelection(String letter, String tileId, bool isSelected) {
+  void handleTileSelection(Tile tile, bool isSelected) {
+    print(
+        "in handleTileSelection: letter: ${tile.letter}, tileId: ${tile.tileId}, isSelected: $isSelected");
     setState(() {
-      final tileData = {'letter': letter, 'tileId': tileId};
       if (isSelected) {
-        if (!inputtedLetters.any((tile) => tile['tileId'] == tileId)) {
-          officiallySelectedTileIds.add(tileId);
-          inputtedLetters.add(tileData);
+        // If the tile is not already selected, add it to the selected tiles
+        if (!inputtedLetters
+            .any((inputtedTile) => inputtedTile.tileId == tile.tileId)) {
+          print("in handleTileSelection: adding tile to inputtedLetters...");
+          print("inputtedLetters before: $inputtedLetters");
+          print("officiallySelectedTileIds before: $officiallySelectedTileIds");
+          officiallySelectedTileIds.add(tile.tileId.toString());
+
+          inputtedLetters.add(tile);
+          print("inputtedLetters AFTER: $inputtedLetters");
+          print("officiallySelectedTileIds AFTER: $officiallySelectedTileIds");
         }
       } else {
-        officiallySelectedTileIds.remove(tileId); // Unmark the tile as selected
-        inputtedLetters.removeWhere((tile) => tile['tileId'] == tileId);
+        officiallySelectedTileIds
+            .remove(tile.tileId.toString()); // Unmark the tile as selected
+        inputtedLetters
+            .removeWhere((inputtedTile) => inputtedTile.tileId == tile.tileId);
+      }
+    });
+  }
+
+  List<Tile> _findAvailableTilesWithThisLetter(String letter) {
+    // Find all tiles that match this letter that are not already in inputtedLetters and not
+    // already in officiallySelectedTileIds or in usedTileIds
+    final availableTiles = allTiles.where((tile) {
+      return tile.letter == letter &&
+          !inputtedLetters
+              .any((inputtedTile) => inputtedTile.tileId == tile.tileId) &&
+          !officiallySelectedTileIds.contains(tile.tileId) &&
+          !usedTileIds.contains(tile.tileId);
+    }).toList();
+    return availableTiles;
+  }
+
+  void _assignLetterToThisTileId(letter, tileId) {
+    setState(() {
+      if (tileId != "TBD" || tileId != "invalid") {
+        print(
+            "✅ _assignLetterToThisTileId officiallySelectedTileIds before: $officiallySelectedTileIds");
+        print("✅ _assignLetterToThisTileId usedTileIds before: $usedTileIds");
+        print(
+            "✅ _assignLetterToThisTileId inputtedLetters before: ${inputtedLetters.map((tile) => {
+                  'letter': tile.letter,
+                  'tileId': tile.tileId
+                }).toList()}");
+
+        officiallySelectedTileIds.add(tileId);
+        print(
+            "✅ _assignLetterToThisTileId() (only one option) Assigned tileId $tileId to letter $letter");
+        inputtedLetters.removeLast();
+        final newTileLocation = allTiles
+            .firstWhere(
+              (t) => t.tileId.toString() == tileId,
+              orElse: () => Tile(letter: '', tileId: '', location: ''),
+            )
+            .location;
+        final newTile =
+            Tile(letter: letter, tileId: tileId, location: newTileLocation);
+        inputtedLetters.add(newTile);
+        // potentiallySelectedTileIds.add(tileId);
+        officiallySelectedTileIds.add(tileId);
+      } else {
+        if (tileId == "invalid") {
+          print(
+              "❌ _assignLetterToThisTileId() Assigned tileId <$tileId> to letter $letter");
+          inputtedLetters.removeLast();
+          inputtedLetters
+              .add(Tile(letter: letter, tileId: tileId, location: ''));
+        }
       }
     });
   }
@@ -282,153 +498,176 @@ class GameScreenState extends State<GameScreen> {
     print("######################Typed letter: $letter ######################");
     print("##################################################################");
     setState(() {
-      inputtedLetters.add({'letter': letter, 'tileId': 'TBD'});
+      inputtedLetters.add(Tile(letter: letter, tileId: 'TBD', location: ''));
     });
 
     // Find all tiles that match this letter that are not already in inputtedLetters and not
     // already in officiallySelectedTileIds or in usedTileIds
-    final tilesWithThisLetter = (gameData?['tiles'] as List)
-        .where((tile) => tile['letter'] == letter)
-        .where((tile) => !inputtedLetters
-            .any((inputtedTile) => inputtedTile['tileId'] == tile['tileId']))
-        .where((tile) => !officiallySelectedTileIds.contains(tile['tileId']))
-        .where((tile) => !usedTileIds.contains(tile['tileId']))
-        .toList();
+    final tilesWithThisLetter = _findAvailableTilesWithThisLetter(letter);
     print(
-        "Tiles with this letter (found everywhere except inputtedLetters/officiallySelected/usedTileIds): $tilesWithThisLetter");
-
-    // Assign tileId if possible
-    _assignTileId(letter, tilesWithThisLetter);
-
-    // If there are no words in the game yet, just choose the first tile that matches the letter
-    if (gameData == null ||
-        gameData?['words'] == null ||
-        gameData?['words'].isEmpty) {
-      final tileId = tilesWithThisLetter.first['tileId'].toString();
-      setState(() {
-        inputtedLetters.removeLast();
-        inputtedLetters.add({'letter': letter, 'tileId': tileId});
-        potentiallySelectedTileIds.add(tileId);
-        print("Marked last tile as valid: $inputtedLetters");
-      });
+        "Tiles with this letter (found everywhere except inputtedLetters/officiallySelected/usedTileIds):");
+    for (var tile in tilesWithThisLetter) {
+      print("Tile (${tile.letter}): id: ${tile.tileId} - ${tile.location}");
     }
-
     // If no tiles match this typed letter
     if (tilesWithThisLetter.isEmpty) {
       print("❌ No tiles found for letter: $letter");
-
-      if (inputtedLetters.isNotEmpty) {
-        final lastTile = inputtedLetters.last;
-        if (lastTile['tileId'] != 'invalid') {
-          setState(() {
-            inputtedLetters.removeLast();
-            inputtedLetters.add({'letter': letter, 'tileId': 'invalid'});
-            print("Marked last tile as invalid: $inputtedLetters");
-          });
-        }
-      }
+      _assignLetterToThisTileId(letter, "invalid");
+      return;
     }
-
+    // if there is only one tile with this letter, assign it to the selected tile
+    if (tilesWithThisLetter.length == 1) {
+      // tileId has to be tilesWithThisLetter that is not in inputtedLetters
+      // and not in officiallySelectedTileIds or usedTileIds
+      var tileId = tilesWithThisLetter
+          .firstWhere(
+            (tile) =>
+                !inputtedLetters.any(
+                    (inputtedTile) => inputtedTile.tileId == tile.tileId) &&
+                !officiallySelectedTileIds.contains(tile.tileId) &&
+                !usedTileIds.contains(tile.tileId),
+            orElse: () => Tile(letter: '', tileId: 'invalid', location: ''),
+          )
+          .tileId
+          .toString();
+      print(
+          "🌿✅✅✅✅ Only one tile found for letter $letter:...assignLetterToThisTileId --> tileId = $tileId");
+      // print(
+      //     "🌿🌿🌿 if there is only one letter option, and it is already in the officiallySelectedTile or inputtedLetters, etc, then it cannot be assigned! must be 'invalid'");
+      // If the tileId is already in inputtedLetters or officiallySelectedTileIds, then it cannot be assigned
+      if (officiallySelectedTileIds.contains(tileId) ||
+          inputtedLetters
+              .any((inputtedTile) => inputtedTile.tileId == tileId)) {
+        tileId = "invalid";
+      }
+      // final tileId = tilesWithThisLetter.first.tileId.toString();
+      _assignLetterToThisTileId(letter, tileId);
+    } else {
+      // Try to assign tileId since there are multiple options
+      _assignTileId(letter, tilesWithThisLetter);
+    }
     setState(() {
+      potentialMatches =
+          tilesWithThisLetter.map((tile) => tile.tileId.toString()).toList();
       // If only one letter has been typed so far
-      if (inputtedLetters.length == 1) {
-        // First letter: Highlight all matching tiles
-        potentialMatches = tilesWithThisLetter
-            .map((tile) => tile['tileId'].toString())
-            .toList();
-        potentiallySelectedTileIds.addAll(potentialMatches);
-        print("First letter typed, potential matches: $potentialMatches");
-        print(
-            "potentiallySelected[highlighted] tile IDs: $potentiallySelectedTileIds");
-      } else {
-        potentialMatches = tilesWithThisLetter
-            .map((tile) => tile['tileId'].toString())
-            .toList();
+      if (inputtedLetters.length > 1) {
         potentiallySelectedTileIds.addAll(potentialMatches);
         // More than two letters → Start refining
+        print(
+            "potentiallySelected[highlighted] tile IDs for after typing $letter: $potentiallySelectedTileIds");
         print("More than one letter typed, refining potential matches...");
         _refinePotentialMatches();
       }
     });
-    if (potentialMatches.length > 1) {
-      print("_handleLetterTyped potentialMatches: $potentialMatches");
-    }
-    if (potentiallySelectedTileIds.length > 1) {
-      print(
-          "Letters that should be potentiallySelected[highlighted]: $potentiallySelectedTileIds");
-    }
   }
 
-  void _assignTileId(String letter, List<dynamic> tilesWithThisLetter) {
+  void _assignTileId(String letter, List<Tile> tilesWithThisLetter) {
+    for (var tile in tilesWithThisLetter) {
+      print(
+          "in _assignTileId function: letter = $letter, tilesWithThisLetterTile (${tile.letter}): id: ${tile.tileId} - ${tile.location}");
+    }
     // If there is only one tile with this letter, assign it to the selected tile
     if (tilesWithThisLetter.length == 1) {
-      final tileId = tilesWithThisLetter.first['tileId'].toString();
+      final tileId = tilesWithThisLetter.first.tileId.toString();
       setState(() {
         inputtedLetters.removeLast();
-        inputtedLetters.add({'letter': letter, 'tileId': tileId});
+        inputtedLetters.add(Tile(letter: letter, tileId: tileId, location: ''));
         potentiallySelectedTileIds.add(tileId);
         officiallySelectedTileIds.add(tileId);
         print("✅ (only one option) Assigned tileId $tileId to letter $letter");
       });
       return;
     }
+    // print("in _assignTileId, What are the existing inputtedLetters?: ")
     // 🔍 Collect used tile IDs from selected tiles
     final Set<String> usedTileIds = inputtedLetters
-        .where((tile) => tile['tileId'] != 'TBD')
-        .map((tile) => tile['tileId'].toString())
+        .where((tile) => tile.tileId != 'TBD')
+        .map((tile) => tile.tileId.toString())
         .toSet();
 
     for (var selectedTile in inputtedLetters) {
-      if (selectedTile['tileId'] == 'TBD' && selectedTile['letter'] == letter) {
-        // 🔍 Prioritize tiles that have not been used yet
+      if (selectedTile.tileId == 'TBD' && selectedTile.letter == letter) {
+        // 🔍 Prioritize middle tiles that have not been used yet
         final tile = tilesWithThisLetter.firstWhere(
-          (tile) => !usedTileIds.contains(tile['tileId'].toString()),
-          orElse: () => {},
+          (tile) =>
+              tile.location == 'middle' &&
+              !usedTileIds.contains(tile.tileId.toString()),
+          orElse: () => Tile(letter: '', tileId: '', location: ''),
         );
 
-        final tileId = tile['tileId']?.toString();
-        if (tileId != null) {
+        final tileId = tile.tileId?.toString();
+        if (tileId != null && tileId != '') {
           setState(() {
-            selectedTile['tileId'] = tileId;
-            final location = tile['location'];
+            selectedTile.tileId = tileId;
+            final location = tile.location;
             usedTileIds.add(tileId);
-            // officiallySelectedTileIds.add(tileId);
+            officiallySelectedTileIds.add(tileId);
             print(
                 "✅ Assigned tileId $tileId from location ($location) to letter $letter");
           });
         } else {
-          print("❌ No available tileId found for letter $letter");
-          // Mark this as invalid
-          setState(() {
-            selectedTile['tileId'] = 'invalid';
-          });
+          // If no middle tile is found, assign any available tile that has not been used yet
+          final fallbackTile = tilesWithThisLetter.firstWhere(
+            (tile) => !usedTileIds.contains(tile.tileId.toString()),
+            orElse: () => Tile(letter: '', tileId: '', location: ''),
+          );
+
+          final fallbackTileId = fallbackTile.tileId?.toString();
+          if (fallbackTileId != null && fallbackTileId != '') {
+            setState(() {
+              selectedTile.tileId = fallbackTileId;
+              final location = fallbackTile.location;
+              usedTileIds.add(fallbackTileId);
+              officiallySelectedTileIds.add(fallbackTileId);
+              print(
+                  "✅ Assigned fallback tileId $fallbackTileId from location ($location) to letter $letter");
+            });
+          } else {
+            print("❌ No available tileId found for letter $letter");
+            // Mark this as invalid
+            setState(() {
+              selectedTile.tileId = 'invalid';
+            });
+          }
         }
       }
     }
-    print("🔚 End of _assignTileId function: $inputtedLetters");
+    // get the tile locations of inputtedLetters from allTiles and print the inputtedLetters as tiles
+    // print the allTiles where the tileId matches inputtedLetters
+    final matchingTiles = allTiles.where((tile) {
+      return inputtedLetters.any((inputtedTile) =>
+          inputtedTile.tileId.toString() == tile.tileId.toString());
+    }).toList();
+    print(
+        "🔚 End of _assignTileId function, inputtedLetters=: ${matchingTiles.map((tile) => {
+              'letter': tile.letter,
+              'tileId': tile.tileId,
+              'location': tile.location
+            }).toList()}");
   }
 
   void _reassignTilesToMiddle() {
     // Needs to look through the inputtedLetters and find ones that are either invalid or from non-middle locations
     // Then, it should find a matching middle tile and assign it to the selectedTile
     // Needs to make sure that middle tile has not already been assigned (ie its tileId is not in inputtedLetters)
-    final List<Map<String, dynamic>> allMiddleTiles =
-        (gameData?['tiles'] as List)
-            .where((tile) => tile['location'] == 'middle')
-            .map((tile) => tile as Map<String, dynamic>)
-            .toList();
-    print("🔍🔍 All middle tiles: $allMiddleTiles");
-    print("🔍 All selected tiles: $inputtedLetters");
+    print("🔍🔍🔍 Start of _reassignTilesToMiddle function");
+    final List<Tile> allMiddleTiles =
+        allTiles.where((tile) => tile.location == 'middle').toList();
+    // print all middleTiles
+    print("🔍 All selected tiles: ${inputtedLetters.map((tile) => {
+          'letter': tile.letter,
+          'tileId': tile.tileId
+        }).toList()}");
     // if all the letters are already assigned to middle tiles, return
     // check every single tileId from inputtedLetters and see if the location of that tileId = middle
     if (inputtedLetters.every((tile) {
-      final tileId = tile['tileId'];
+      final tileId = tile.tileId;
       if (tileId != 'TBD') {
-        final tile = (gameData?['tiles'] as List).firstWhere(
-          (t) => t['tileId'].toString() == tileId,
-          orElse: () => {},
+        final tile = allTiles.firstWhere(
+          (t) => t.tileId.toString() == tileId,
+          orElse: () => Tile(letter: '', tileId: '', location: ''),
         );
-        return tile.isNotEmpty && tile['location'] == 'middle';
+        return tile.tileId != '' && tile.location == 'middle';
       }
       return false; // If tileId is TBD, return false
     })) {
@@ -438,317 +677,264 @@ class GameScreenState extends State<GameScreen> {
     setState(() {
       for (var selectedTile in inputtedLetters) {
         print(
-            "🔍 Checking selected tile to see if it needs reassignment to a middle tile: $selectedTile");
+            "🔍 Checking selected tile to see if it needs reassignment to a middle tile:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
         // Check each individual selectedTile to see if it is from a non-middle location.
         // If it is, assign it to the middle tile that matches the letter, that hasn't already
         // been assigned to another selectedTile
-        if (selectedTile['tileId'] != 'TBD') {
+        if (selectedTile.tileId != 'TBD') {
           // Check if the tile is from a non-middle location and should be replaced
-          final assignedTile = (gameData?['tiles'] as List).firstWhere(
-            (tile) => tile['tileId'].toString() == selectedTile['tileId'],
-            orElse: () => {},
+          final assignedTile = allTiles.firstWhere(
+            (tile) => tile.tileId.toString() == selectedTile.tileId,
+            orElse: () => Tile(letter: '', tileId: '', location: ''),
           );
           // if the tile is already from the middle, skip
-          if (assignedTile.isNotEmpty && assignedTile['location'] == 'middle') {
+          if (assignedTile.tileId != '' && assignedTile.location == 'middle') {
             continue;
           }
 
           print(
-              "🔍✅🔍 This tile needs to be reassigned to a middle tile: $selectedTile");
+              "🔍✅🔍 This tile needs to be reassigned to a middle tile: letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
 
-          if (assignedTile.isNotEmpty && assignedTile['location'] != 'middle') {
+          if (assignedTile.tileId != '' && assignedTile.location != 'middle') {
             // Find a middle tile that matches the letter, that is not already in inputtedLetters
             final matchingMiddleTile = allMiddleTiles.firstWhere(
               (middleTile) =>
-                  middleTile['letter'] == selectedTile['letter'] &&
-                  !inputtedLetters.any((tile) =>
-                      tile['tileId'] == middleTile['tileId'].toString()),
-              orElse: () => {},
+                  middleTile.letter == selectedTile.letter &&
+                  !inputtedLetters.any(
+                      (tile) => tile.tileId == middleTile.tileId.toString()),
+              orElse: () => Tile(letter: '', tileId: '', location: ''),
             );
 
             print(
-                "🔍 Matching middle tile it can be reassigned to: $matchingMiddleTile");
+                "🔍 Matching middle tile it can be reassigned to: ${matchingMiddleTile.letter}, tileId: ${matchingMiddleTile.tileId}");
 
-            if (matchingMiddleTile.isNotEmpty) {
-              selectedTile['tileId'] = matchingMiddleTile['tileId'].toString();
-              print("!!! 💞✅💞 Reassigned tile to be: $selectedTile");
+            if (matchingMiddleTile.tileId != '') {
+              // final tileId = matchingMiddleTile.tileId.toString();
+              // _assignLetterToThisTileId(selectedTile.letter, tileId);
+              // remove tileId from officiallySelectedTileIds
+              officiallySelectedTileIds.remove(selectedTile.tileId);
+              selectedTile.tileId = matchingMiddleTile.tileId.toString();
+              officiallySelectedTileIds
+                  .add(matchingMiddleTile.tileId.toString());
+              print(
+                  "!!! 💞✅💞 Reassigned tile to be:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
             }
           }
         }
       }
     });
 
-    print("🔚🔚 End of _reassignTilesToMiddle function: $inputtedLetters");
+    print(
+        "🔚🔚 End of _reassignTilesToMiddle function: ${inputtedLetters.map((tile) => {
+              'letter': tile.letter,
+              'tileId': tile.tileId
+            }).toList()}");
+  }
+
+  getWordData(String wordId) {
+    // This function should retrieve the word from the gameData based on the wordId
+    // Assuming gameData['words'] is a list of words with their respective IDs
+    final word = (gameData?['words'] as List).firstWhere(
+      (word) => word['wordId'] == wordId,
+      orElse: () => null,
+    );
+    return word;
   }
 
   void _refinePotentialMatches() {
     final String? userId = FirebaseAuth.instance.currentUser?.uid;
-    // 0. Check if any inputtedLetters have tileId set to 'TBD'
-    if (!inputtedLetters.any((tile) => tile['tileId'] == 'TBD')) {
-      debugPrint(
-          "🔚 there are no TBD tiles? refine function: $inputtedLetters");
-      print("💼 No TBD tiles to refine.");
-    }
+    print("💼💼💼 Start of _refinePotentialMatches function");
 
-    final String currentTypedWord =
-        inputtedLetters.map((tile) => tile['letter']).join();
-    print("💼 Current typed word: $currentTypedWord");
+    final String typedWord = inputtedLetters.map((tile) => tile.letter).join();
+    final List<String> typedWordLetters =
+        typedWord.split(''); // Convert to list for flexible checking
+
+    print("💼 Current typed word: $typedWord");
 
     final Map<String, List<String>> letterToTileIds = {};
 
-    for (var tile in inputtedLetters) {
-      final letter = tile['letter'];
-      if (letter != null) {
-        final matchingTiles = (gameData?['tiles'] as List)
-            .where((t) => t['letter'] == letter)
-            .map((t) => t['tileId'].toString())
-            .toList();
-        letterToTileIds[letter] = matchingTiles;
+    for (var tile in allTiles) {
+      // Ensure the letter is not null or empty before adding
+      if (tile.letter != null && tile.letter!.isNotEmpty) {
+        letterToTileIds.putIfAbsent(tile.letter!, () => []);
+        letterToTileIds[tile.letter!]!.add(tile.tileId.toString());
       }
     }
 
     debugPrint("🔍 Possible tile matches for each letter: $letterToTileIds");
 
-    // 1. Check if every selected letter has at least one potential match from the middle
     final bool allSelectedLettersHaveMiddleMatch =
         inputtedLetters.every((tile) {
-      final letter = tile['letter'];
+      final letter = tile.letter;
       if (letter != null) {
-        final middleMatchingTiles = (gameData?['tiles'] as List)
-            .where((t) => t['letter'] == letter && t['location'] == 'middle')
-            .toList();
-        return middleMatchingTiles.isNotEmpty;
+        return allTiles
+            .where((t) => t.letter == letter && t.location == 'middle')
+            .isNotEmpty;
       }
-      return false; // If letter is null, return false
+      return false;
     });
 
     if (allSelectedLettersHaveMiddleMatch) {
       debugPrint(
           "✅ All selected letters have at least one potential match from the middle");
+      _reassignTilesToMiddle();
+    } else if (!allSelectedLettersHaveMiddleMatch) {
+      print("❌ Not all selected letters have a middle match");
 
-      // Find full-word matches within the potential tile matches
       final matchingWords = (gameData?['words'] as List).where((word) {
         final List<String> wordTileIds = (word['tileIds'] as List<dynamic>)
             .map((id) => id.toString())
             .toList();
+
         final String wordString = wordTileIds.map((tileId) {
-          return (gameData?['tiles'] as List).firstWhere(
-              (t) => t['tileId'].toString() == tileId,
-              orElse: () => {'letter': ''})['letter'];
+          return allTiles
+              .firstWhere((t) => t.tileId.toString() == tileId,
+                  orElse: () => Tile(letter: '', tileId: '', location: ''))
+              .letter;
         }).join();
 
-        bool wordIsFullyContained = wordString.split('').every((letter) {
-          return letterToTileIds.containsKey(letter) &&
-              letterToTileIds[letter]!.isNotEmpty;
-        });
+        print("🔍 Checking word: $wordString with tileIds: $wordTileIds");
 
-        debugPrint(
-            "allSelectedLettersHaveMiddleMatch 🔚🔚🔚 End of refine function, inputtedLetters: $inputtedLetters");
-        return wordIsFullyContained;
-      }).toList();
-      // if matchingWords.isEmpty AND the letters are not all already assigned tileIds from the middle
-      if (matchingWords.isEmpty) {
-        print("✅ No full word matches found, assigning from middle tiles");
-        _reassignTilesToMiddle();
-      } else {
-        matchingWords.forEach((word) {
-          print(
-              "✅✅ Matching word: ${word['word']} with tileIds: ${word['tileIds']}");
-        });
+        // ✅ Check if every letter of the word exists in typedWordLetters (typed letters)
+        final bool isContained = wordString
+            .split('')
+            .every((letter) => typedWordLetters.contains(letter));
 
-        final Set<String> matchingWordTileIds = matchingWords
-            .expand((word) =>
-                (word['tileIds'] as List<dynamic>).map((id) => id.toString()))
-            .toSet();
-
-        setState(() {
-          potentiallySelectedTileIds
-              .retainWhere((tileId) => matchingWordTileIds.contains(tileId));
-
-          for (var selectedTile in inputtedLetters) {
-            // If the tileId is still 'TBD', or it is not assigned a tileId with the wordId of the matchingWord,
-            // then assign it to the first tileId that matches the letter from that word, if it is not already
-            // assigned to another selectedTile (ie its tileId is not in inputtedLetters)
-            if (selectedTile['tileId'] == 'TBD' ||
-                !matchingWordTileIds.contains(selectedTile['tileId'])) {
-              final matchingTileId = matchingWordTileIds.firstWhere(
-                (tileId) {
-                  final tile = (gameData?['tiles'] as List).firstWhere(
-                    (t) => t['tileId'].toString() == tileId,
-                    orElse: () => {},
-                  );
-                  return tile['letter'] == selectedTile['letter'];
-                },
-                orElse: () => 'TBD',
-              );
-              if (matchingTileId != 'TBD') {
-                print("Matching tileId found: $matchingTileId");
-                selectedTile['tileId'] = matchingTileId;
-                potentiallySelectedTileIds.remove(matchingTileId);
-              } else if (matchingTileId == 'TBD') {
-                // Look through middle tiles to assign this tile to
-                final matchingMiddleTile =
-                    (gameData?['tiles'] as List).firstWhere(
-                  (t) =>
-                      t['location'] == 'middle' &&
-                      t['letter'] == selectedTile['letter'],
-                  orElse: () => {},
-                );
-                if (matchingMiddleTile.isNotEmpty) {
-                  selectedTile['tileId'] =
-                      matchingMiddleTile['tileId'].toString();
-                  potentiallySelectedTileIds
-                      .remove(matchingMiddleTile['tileId'].toString());
-                  print(
-                      "Assigned middle tileId ${matchingMiddleTile['tileId']} to selectedTile: $selectedTile");
-                } else {
-                  print("No middle tile found for selectedTile: $selectedTile");
-                  // Set the tileId to TBD? Or just leave it as is?
-                }
-              }
-            }
-          }
-        });
-
-        print("✅ Full-word matches found and processed.");
-      }
-    } else {
-      // 2. Find full-word matches within the potential tile matches
-      final matchingWords = (gameData?['words'] as List).where((word) {
-        final List<String> wordTileIds = (word['tileIds'] as List<dynamic>)
-            .map((id) => id.toString())
-            .toList();
-        final String wordString = wordTileIds.map((tileId) {
-          return (gameData?['tiles'] as List).firstWhere(
-              (t) => t['tileId'].toString() == tileId,
-              orElse: () => {'letter': ''})['letter'];
-        }).join();
-
-        bool wordIsFullyContained = wordString.split('').every((letter) {
-          return letterToTileIds.containsKey(letter) &&
-              letterToTileIds[letter]!.isNotEmpty;
-        });
-
-        debugPrint("🔚 End of refine function: $inputtedLetters");
-        return wordIsFullyContained;
-      }).toList();
-      // If there are matching words from the user's input
-      if (matchingWords.isNotEmpty) {
-        matchingWords.forEach((word) {
-          print(
-              "✅✅ Matching word: ${word['word']} with tileIds: ${word['tileIds']}");
-        });
-        // If there is a matching word, assign the inputtedLetters to the first matching
-        // word that is owned by another player
-        // Else any word will work
-        final matchingWord = matchingWords.firstWhere(
-          (word) => word['current_owner_user_id'] != userId,
-          orElse: () => matchingWords.first,
-        );
-
-        if (matchingWord.isNotEmpty) {
-          final matchingWordTileIds = (matchingWord['tileIds'] as List<dynamic>)
-              .map((id) => id.toString())
-              .toSet();
-
-          print("🔍 Matching word tile IDs: $matchingWordTileIds");
-          // Only keep potentiallySelected[highlighted] the tiles that are part of the matching word
-          setState(() {
-            potentiallySelectedTileIds
-                .retainWhere((tileId) => matchingWordTileIds.contains(tileId));
-            print(
-                "🔍 potentiallySelected[highlighted] tile IDs after retain: $potentiallySelectedTileIds");
-
-            // Make sure each letter in the typed out word is assigned to a tileId from the matching word
-            for (var selectedTile in inputtedLetters) {
-              // initialize a list of tiles that are assigned so if a duplicate letter comes up we do not reuse the same tileid
-              List<String> assignedTiles = [];
-              // Assign the tileId from the matching word to the selectedTile
-              print("🔍 Processing selected tile: $selectedTile");
-              // get location of that tileId and make sure it matches the matchingWord's wordId
-              final selectedTileId = selectedTile['tileId'];
-              final selectedTileData = (gameData?['tiles'] as List).firstWhere(
-                (t) => t['tileId'].toString() == selectedTileId,
-                orElse: () => {},
-              );
-              final selectedTileLocation = selectedTileData['location'];
-              final matchingWordWordId = matchingWord['wordId'];
-              if (selectedTileLocation == matchingWordWordId) {
-                print(
-                    "✅ Selected tile is from the matching word, no need to reassign: $selectedTile");
-                if (selectedTileId != null) {
-                  assignedTiles.add(selectedTileId);
-                }
-                continue;
-              }
-              // Find the first tileId in the matching word that matches the letter of the selectedTile
-              // That is not also in the assignedTiles list
-              final matchingTileIdInMatchingWord =
-                  matchingWordTileIds.firstWhere(
-                (tileId) {
-                  final tile = (gameData?['tiles'] as List).firstWhere(
-                    (t) => t['tileId'].toString() == tileId,
-                    orElse: () => {},
-                  );
-                  return tile['letter'] == selectedTile['letter'] &&
-                      !officiallySelectedTileIds.contains(tileId);
-                },
-                orElse: () => 'TBD',
-              );
-              // If a matching tileId is found, assign it to the selectedTile
-              if (matchingTileIdInMatchingWord != 'TBD' &&
-                  !assignedTiles.contains(matchingTileIdInMatchingWord)) {
-                selectedTile['tileId'] = matchingTileIdInMatchingWord;
-                assignedTiles.add(matchingTileIdInMatchingWord);
-                potentiallySelectedTileIds.remove(matchingTileIdInMatchingWord);
-                officiallySelectedTileIds.add(matchingTileIdInMatchingWord);
-                print(
-                    "🔄 Assigned matching tileId $matchingTileIdInMatchingWord to selectedTile: $selectedTile");
-              } else {
-                // if assignedTiles is empty yet the entire word before this tile is a match, then we add all those tileIds to assignedTiles
-                if (assignedTiles.isEmpty) {
-                  assignedTiles.addAll(matchingWordTileIds);
-                }
-                print("🔍🔍🔍 Already assigned tiles: $assignedTiles");
-                print(
-                    "🔍 Matching tileId in matching word: $matchingTileIdInMatchingWord");
-
-                print(
-                    "❌ No matching tileId found for selectedTile: $selectedTile, need to check the middle tiles to assign from there!");
-                // Look through middle tiles to assign this tile to
-                final matchingMiddleTile =
-                    (gameData?['tiles'] as List).firstWhere(
-                  (t) =>
-                      t['location'] == 'middle' &&
-                      t['letter'] == selectedTile['letter'],
-                  orElse: () => {},
-                );
-                if (matchingMiddleTile.isNotEmpty) {
-                  selectedTile['tileId'] =
-                      matchingMiddleTile['tileId'].toString();
-                  potentiallySelectedTileIds
-                      .remove(matchingMiddleTile['tileId'].toString());
-                  officiallySelectedTileIds
-                      .add(matchingMiddleTile['tileId'].toString());
-                  print(
-                      "729 Assigned middle tileId ${matchingMiddleTile['tileId']} to selectedTile: $selectedTile");
-                } else {
-                  print("No middle tile found for selectedTile: $selectedTile");
-                  // Set the tileId to TBD? Or just leave it as is?
-                }
-              }
-            }
-          });
-          print("✅ Full-word matches found and processed.");
+        if (!isContained) {
+          print("❌ $wordString is NOT contained in $typedWord");
         } else {
-          print("❌ No full-word matches found within the potential tiles.");
+          print("✅ $wordString is contained in $typedWord");
         }
-        print("✅ Full-word matches found and processed.");
+
+        return isContained;
+      }).toList();
+
+      print("💀 Found contained matching words: $matchingWords");
+
+      if (matchingWords.isEmpty) {
+        print(
+            "✅ No full word matches found, and letters are not all from middle tiles");
+        // _reassignTilesToMiddle();
       } else {
-        print("❌ No full-word matches found within the potential tiles.");
+        print(
+            "There are exact matching words. Proceeding to reassign tiles to the longest matching word that does not belong to this user...");
+        // If not all selected letters have a middle match, reassign tiles to middle
+        // check if there are any full words that can be formed with the current inputted letters
+        print("💀 all the words that match: $matchingWords");
+        // Sort by the length of the word, longest first
+        matchingWords.sort((a, b) => b.length.compareTo(a.length));
+
+        // Find first word that is not owned by this user, and assign its tileIds to the selected tiles
+        final matchingWordToUse = matchingWords.firstWhere(
+            (word) => word['current_owner_user_id'] != userId,
+            orElse: () => matchingWords.first);
+        print(
+            "💀 matchingWordToUse (the word to steal/take): $matchingWordToUse");
+        // Assign the tileIds of the matching word to the selected tiles
+        final tileIdsToReassignInputtedLettersToFromMatchingWord =
+            matchingWordToUse['tileIds'] as List<dynamic>;
+        print("if you make it here...interesting (790)");
+        print(
+            "💀 tileIds to reassign inputted letters to: $tileIdsToReassignInputtedLettersToFromMatchingWord");
+        print("💀 tileIds from matchingWord = ${matchingWordToUse['tileIds']}");
+        // create Tile objects from those tileIds
+        final matchingTiles =
+            tileIdsToReassignInputtedLettersToFromMatchingWord.map((tileId) {
+          final tile = allTiles.firstWhere(
+            (t) => t.tileId.toString() == tileId.toString(),
+            orElse: () => Tile(letter: '', tileId: '', location: ''),
+          );
+          return tile;
+        }).toList();
+
+        // reassign the tileIds of the inputtedLetters to those tileIds
+        print(
+            "💀 calling _reassignTilesToWord with wordId = ${matchingWordToUse['wordId']}");
+        _reassignTilesToWord(matchingWordToUse['wordId']);
+        print("just called _reassignTilesToWord");
+        // for each tileId in tileIdsToReassignInputtedLettersToFromMatchingWord, find the corresponding tile in allTiles
+        // and reassign the tileId of the inputtedLetters to that tileId
       }
+      _syncTileIdsWithInputtedLetters();
     }
-    debugPrint("🔚🔚🔚🔚🔚 End of refine function: $inputtedLetters");
+
+    print("🔚🔚🔚 End of refine function, 🩵 officiallySelectedTileIds = ");
+    officiallySelectedTileIds.forEach((tileId) {
+      final tile = allTiles.firstWhere(
+        (t) => t.tileId.toString() == tileId.toString(),
+        orElse: () => Tile(letter: '', tileId: '', location: ''),
+      );
+      print(
+          "🩵🩵 officiallySelectedTiles tile: ${tile.letter} - ${tile.tileId} - ${tile.location}");
+    });
+  }
+
+  _reassignTilesToWord(String wordId) {
+    print("💀💀💀 Start of _reassignTilesToWord function, wordId = $wordId");
+    // This function should reassign the tileIds of the inputtedLetters to the tileIds of the word with the given wordId
+    final word = getWordData(wordId);
+    if (word == null) {
+      print("❌ Word not found for wordId: $wordId");
+      return;
+    }
+    print("💀 Word data for wordId $wordId: $word");
+    final List<String> tileIds = (word['tileIds'] as List<dynamic>)
+        .map((tileId) => tileId.toString())
+        .toList();
+    print("maybe this is the problem (str int problem ?)837");
+    print("💀 tileIds from word = $tileIds");
+
+    setState(() {
+      for (var selectedTile in inputtedLetters) {
+        print(
+            "🔍_reassignTilesToWord Checking selected tile to see if it needs reassignment to a word tile:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
+        if (selectedTile.tileId != 'TBD') {
+          final assignedTile = allTiles.firstWhere(
+            (tile) => tile.tileId.toString() == selectedTile.tileId,
+            orElse: () => Tile(letter: '', tileId: '', location: ''),
+          );
+          if (assignedTile.tileId != '' &&
+              tileIds.contains(assignedTile.tileId.toString())) {
+            continue;
+          }
+
+          print(
+              "💀💀💀_reassignTilesToWord This tile needs to be reassigned to a word tile: letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
+
+          final matchingWordTile = allTiles.firstWhere(
+            (tile) =>
+                tileIds.contains(tile.tileId.toString()) &&
+                tile.letter == selectedTile.letter &&
+                !inputtedLetters.any((inputtedTile) =>
+                    inputtedTile.tileId == tile.tileId.toString()),
+            orElse: () => Tile(letter: '', tileId: '', location: ''),
+          );
+
+          print(
+              "💀💀💀_reassignTilesToWord Matching word tile it can be reassigned to: ${matchingWordTile.letter}, tileId: ${matchingWordTile.tileId}");
+
+          if (matchingWordTile.tileId != '') {
+            officiallySelectedTileIds.remove(selectedTile.tileId);
+            selectedTile.tileId = matchingWordTile.tileId.toString();
+            officiallySelectedTileIds.add(matchingWordTile.tileId.toString());
+            print(
+                "!!! 💀💀💀_reassignTilesToWord Reassigned tile to be:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
+          }
+        }
+      }
+    });
+
+    print(
+        "💀💀💀 End of _reassignTilesToWord function: ${inputtedLetters.map((tile) => {
+              'letter': tile.letter,
+              'tileId': tile.tileId
+            }).toList()}");
+    print(
+        "💀🔄💀 Reassigned tileIds of inputtedLetters to those of the word with wordId $wordId: ${inputtedLetters.map((tile) => {
+              'letter': tile.letter,
+              'tileId': tile.tileId
+            }).toList()}");
+    _syncTileIdsWithInputtedLetters();
   }
 
   TextSpan _keyStyle(String key) {
@@ -769,8 +955,11 @@ class GameScreenState extends State<GameScreen> {
   Widget build(BuildContext context) {
     var screenSize = MediaQuery.of(context).size;
     final double tileSize = screenSize.width > 600 ? 40 : 25;
-    Color getBackgroundColor(tile) {
-      switch (tile['tileId']) {
+    final isCurrentUsersTurn =
+        currentUserId != null && currentUserId == currentPlayerTurn;
+
+    Color getBackgroundColor(Tile tile) {
+      switch (tile.tileId) {
         case 'invalid':
           return Colors.red;
         case 'TBD':
@@ -782,11 +971,6 @@ class GameScreenState extends State<GameScreen> {
       }
     }
 
-    final allTiles = gameData?['tiles'] is List<dynamic>
-        ? List<Map<String, dynamic>>.from(
-            gameData!['tiles'].whereType<Map>().toList(),
-          )
-        : [];
     return Focus(
       autofocus: true,
       onKey: (FocusNode node, RawKeyEvent event) {
@@ -801,18 +985,18 @@ class GameScreenState extends State<GameScreen> {
             _handleBackspace();
           } else if (key == LogicalKeyboardKey.enter) {
             if (inputtedLetters.isNotEmpty) {
-              print("Submitting selected tiles: $inputtedLetters");
+              print(
+                  "❤️ Submitting selected tiles: inputtedletters = ${inputtedLetters.map((tile) => {
+                        'letter': tile.letter,
+                        'tileId': tile.tileId
+                      }).toList()}");
               _sendTileIds();
             } else {
               _flipNewTile();
             }
           } else if (key == LogicalKeyboardKey.escape) {
             setState(() {
-              inputtedLetters.clear();
-
-              usedTileIds.clear();
-              potentiallySelectedTileIds.clear();
-              officiallySelectedTileIds.clear();
+              clearInput();
             });
           }
         }
@@ -879,8 +1063,7 @@ class GameScreenState extends State<GameScreen> {
                           itemBuilder: (context, index) {
                             final playerWordData = playerWords[index];
                             final isCurrentPlayerTurn =
-                                playerWordData['playerId'] ==
-                                    gameData?['currentPlayerTurn'];
+                                playerWordData['playerId'] == currentPlayerTurn;
                             final score = gameData?['players']
                                     [playerWordData['playerId']]['score'] ??
                                 0;
@@ -895,8 +1078,7 @@ class GameScreenState extends State<GameScreen> {
                               potentiallySelectedTileIds:
                                   potentiallySelectedTileIds,
                               onClearSelection: () {},
-                              allTiles:
-                                  List<Map<String, dynamic>>.from(allTiles),
+                              allTiles: allTiles,
                               tileSize: tileSize,
                               isCurrentPlayerTurn: isCurrentPlayerTurn,
                               score: score,
@@ -918,92 +1100,85 @@ class GameScreenState extends State<GameScreen> {
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   Text(
-                                    gameData?['tiles'] != null ? "Tiles:" : "",
+                                    gameData?['tiles'] != null
+                                      ? 'Tiles ($tilesLeftCount Left):'
+                                      : '',
                                     style: const TextStyle(
-                                        fontSize: 16, color: Colors.white),
-                                  ),
-                                  const SizedBox(height: 5),
-
-                                  // Tile Grid
-                                  Expanded(
-                                    child: GridView.builder(
-                                      gridDelegate:
-                                          SliverGridDelegateWithFixedCrossAxisCount(
-                                        crossAxisCount:
-                                            constraints.maxWidth > 600 ? 12 : 8,
-                                        childAspectRatio: 1.0,
-                                        crossAxisSpacing: 1.0,
-                                        mainAxisSpacing: 1.0,
-                                      ),
-                                      itemCount: (gameData?['tiles'] as List?)
-                                              ?.where((tile) =>
-                                                  tile != null &&
-                                                  tile is Map &&
-                                                  tile['location'] ==
-                                                      'middle' &&
-                                                  (tile['letter'] as String?)
-                                                          ?.isNotEmpty ==
-                                                      true)
-                                              .length ??
-                                          0,
-                                      itemBuilder: (context, index) {
-                                        final tiles = (gameData?['tiles']
-                                                as List?)
-                                            ?.where((tile) =>
-                                                tile != null &&
-                                                tile is Map &&
-                                                tile['location'] == 'middle' &&
-                                                (tile['letter'] as String?)
-                                                        ?.isNotEmpty ==
-                                                    true)
-                                            .toList();
-
-                                        if (tiles == null ||
-                                            index >= tiles.length) {
-                                          return const SizedBox.shrink();
-                                        }
-
-                                        final tile = tiles[index]
-                                            as Map<dynamic, dynamic>?;
-                                        final letter =
-                                            tile?['letter'] as String? ?? "";
-                                        final tileId =
-                                            tile?['tileId']?.toString() ?? "";
-
-                                        final isSelected =
-                                            officiallySelectedTileIds
-                                                .contains(tileId);
-                                        final isHighlighted =
-                                            potentiallySelectedTileIds
-                                                .contains(tileId);
-                                        return Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              horizontal: 1.0),
-                                          child: TileWidget(
-                                            letter: letter,
-                                            tileId: tileId,
-                                            tileSize: tileSize,
-                                            onClickTile: (selectedLetter,
-                                                tileId, isSelected) {
-                                              setState(() {
-                                                handleTileSelection(
-                                                    selectedLetter,
-                                                    tileId,
-                                                    isSelected);
-                                              });
-                                            },
-                                            isSelected: isSelected,
-                                            backgroundColor: isSelected
-                                                ? Color(0xFF4A148C)
-                                                : isHighlighted
-                                                    ? Colors.purple
-                                                        .withOpacity(0.25)
-                                                    : Colors.purple,
-                                          ),
-                                        );
-                                      },
+                                      fontSize: 16,
+                                      color: Colors.white,
                                     ),
                                   ),
+                                  const SizedBox(height: 5),
+                                  middleTiles.isEmpty
+                                      ? Expanded(
+                                            child: Text(
+                                              "Flip a tile to begin – it's ${playerIdToUsernameMap[currentPlayerTurn]}'s turn to flip a tile!",
+                                              style: TextStyle(
+                                                  fontSize: 16,
+                                                  color: Colors.white),
+                                            ),
+                                        )
+                                      :
+
+                                      // Tile Grid
+                                      Expanded(
+                                          child: GridView.builder(
+                                            gridDelegate:
+                                                SliverGridDelegateWithFixedCrossAxisCount(
+                                              crossAxisCount:
+                                                  constraints.maxWidth > 600
+                                                      ? 12
+                                                      : 8,
+                                              childAspectRatio: 1.0,
+                                              crossAxisSpacing: 1.0,
+                                              mainAxisSpacing: 1.0,
+                                            ),
+                                            itemCount: middleTiles.length,
+                                            itemBuilder: (context, index) {
+                                              if (index >= middleTiles.length) {
+                                                return Center(
+                                                  child: Text(
+                                                    "Flip a tile to begin – ${currentPlayerTurn}'s needs to flip a tile!",
+                                                    style: TextStyle(
+                                                        fontSize: 16,
+                                                        color: Colors.white),
+                                                  ),
+                                                );
+                                              }
+                                              final tile = middleTiles[index];
+                                              final isSelected =
+                                                  officiallySelectedTileIds
+                                                      .contains(tile.tileId
+                                                          .toString());
+                                              final isHighlighted =
+                                                  potentiallySelectedTileIds
+                                                      .contains(tile.tileId);
+                                              return Padding(
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                        horizontal: 1.0),
+                                                child: TileWidget(
+                                                  tile: tile,
+                                                  tileSize: tileSize,
+                                                  onClickTile:
+                                                      (tile, isSelected) {
+                                                    setState(() {
+                                                      handleTileSelection(
+                                                          tile, isSelected);
+                                                    });
+                                                  },
+                                                  isSelected: isSelected,
+                                                  backgroundColor: isSelected
+                                                      ? Color(0xFF4A148C)
+                                                      : isHighlighted
+                                                          ? Colors.purple
+                                                              .withOpacity(0.25)
+                                                          : Colors.purple,
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        ),
                                 ],
                               ),
                             ),
@@ -1015,7 +1190,11 @@ class GameScreenState extends State<GameScreen> {
                               Expanded(
                                 flex: 1,
                                 child: GameLog(
-                                    gameId: widget.gameId, tileSize: tileSize),
+                                    gameId: widget.gameId,
+                                    gameData: gameData!,
+                                    playerIdToUsernameMap:
+                                        playerIdToUsernameMap,
+                                    tileSize: tileSize),
                               ),
                           ],
                         ),
@@ -1028,12 +1207,11 @@ class GameScreenState extends State<GameScreen> {
                         style:
                             const TextStyle(fontSize: 16, color: Colors.white),
                       ),
-
                       Wrap(
                         spacing: 4.0,
                         children: inputtedLetters.map((tile) {
                           return SelectedLetterTile(
-                            letter: tile['letter']!,
+                            tile: tile,
                             tileSize: tileSize,
                             backgroundColor: getBackgroundColor(tile),
                             onRemove: () {
@@ -1079,12 +1257,34 @@ class GameScreenState extends State<GameScreen> {
               heroTag: 'send',
             ),
             const SizedBox(width: 10),
-            FloatingActionButton(
-              onPressed: _flipNewTile,
-              child: const Icon(Icons.refresh_rounded),
-              backgroundColor: Colors.yellow,
-              foregroundColor: Colors.black,
-              heroTag: 'flip',
+            AnimatedBuilder(
+              animation: _flipAnimation,
+              builder: (context, child) {
+                // flip 0 to 180 degrees (in radians)
+                final angle = _flipAnimation.value * 3.14159;
+
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, 0.001) // adds depth for 3D effect
+                    ..rotateY(angle),
+                  child: FloatingActionButton(
+                    onPressed: isCurrentUsersTurn && !isFlipping
+                        ? () {
+                            setState(() => isFlipping = true);
+                            _flipController.forward(from: 0);
+                            _flipNewTile();
+                          }
+                        : null,
+                    backgroundColor: isCurrentUsersTurn
+                        ? Colors.yellow
+                        : Colors.grey.shade400,
+                    foregroundColor: Colors.black,
+                    heroTag: 'flip',
+                    child: const Icon(Icons.refresh_rounded),
+                  ),
+                );
+              },
             ),
           ],
         ),

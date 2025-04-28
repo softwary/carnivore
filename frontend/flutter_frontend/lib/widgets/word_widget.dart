@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 import 'tile_widget.dart';
 import 'selected_letter_tile.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class WordCard extends StatefulWidget {
-  final List<Map<String, dynamic>> tiles;
+  final List<Tile> tiles;
   final String currentOwnerUserId;
   final Function(List<dynamic>) onWordTap;
   final Map<String, Color> playerColors;
-  final Function(String, String, bool) onClickTile;
+  final Function(Tile, bool) onClickTile;
   final Set<String> officiallySelectedTileIds;
   final Set<String> potentiallySelectedTileIds;
   final VoidCallback onClearSelection;
@@ -36,9 +37,7 @@ class _WordCardState extends State<WordCard> {
       widget.onClearSelection();
 
       for (var tile in widget.tiles) {
-        final letter = tile['letter']?.toString() ?? "?";
-        final tileId = tile['tileId']?.toString() ?? "";
-        widget.onClickTile(letter, tileId, true);
+        widget.onClickTile(tile, true);
       }
     });
   }
@@ -50,7 +49,7 @@ class _WordCardState extends State<WordCard> {
     return GestureDetector(
       onTap: () {
         _selectAllTiles();
-        widget.onWordTap(widget.tiles.map((tile) => tile['tileId']).toList());
+        widget.onWordTap(widget.tiles.map((tile) => tile.tileId).toList());
       },
       child: Card(
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
@@ -74,11 +73,10 @@ class _WordCardState extends State<WordCard> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: widget.tiles
                         .where((tile) =>
-                            tile['letter'] != null && tile['tileId'] != null)
+                            tile.letter != null && tile.tileId != null)
                         .map<Widget>((tile) {
-                      final letter = tile['letter']?.toString() ?? "?";
-                      final tileId = tile['tileId']?.toString() ?? "";
-                      final tileOwner = tile['ownerUserId'] as String?;
+                      final tileId = tile.tileId?.toString() ?? "";
+                      final tileOwner = widget.currentOwnerUserId;
                       final tileColor =
                           widget.playerColors[tileOwner] ?? Colors.black;
                       final isSelected =
@@ -90,8 +88,7 @@ class _WordCardState extends State<WordCard> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 1), // Adjusted spacing
                         child: TileWidget(
-                          letter: letter,
-                          tileId: tileId,
+                          tile: tile,
                           tileSize: widget.tileSize,
                           onClickTile: widget.onClickTile,
                           isSelected: isSelected,

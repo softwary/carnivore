@@ -1,15 +1,22 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
-import 'package:intl/intl.dart'; // Make sure you have this import
-import 'package:flutter_frontend/widgets/tile_widget.dart'; // Import TileWidget
+import 'package:flutter_frontend/widgets/tile_widget.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class GameLog extends StatefulWidget {
-  final String gameId;
+  final Map<String, dynamic> gameData;
   final double tileSize;
+  final Map<String, String> playerIdToUsernameMap;
+  final String gameId;
 
-  const GameLog({Key? key, required this.gameId, required this.tileSize})
-      : super(key: key);
+  const GameLog({
+    Key? key,
+    required this.gameData,
+    required this.tileSize,
+    required this.playerIdToUsernameMap,
+    required this.gameId,
+  }) : super(key: key);
 
   @override
   _GameLogState createState() => _GameLogState();
@@ -32,44 +39,28 @@ class _GameLogState extends State<GameLog> {
         .onValue
         .listen((event) {
       if (!mounted) return;
-      if (event.snapshot.value != null) {
-        // Correctly handle the snapshot value
-        Map<dynamic, dynamic> data = event.snapshot.value is Map
-            ? event.snapshot.value as Map<dynamic, dynamic>
-            : {}; // Default to an empty map if not a Map
 
-        List<Map<String, dynamic>> newLogs = data.entries.map((entry) {
-          Map<dynamic, dynamic> logData =
-              entry.value as Map<dynamic, dynamic>; // Explicit cast
-          return {
-            'playerId': logData['playerId'] ?? "Unknown Player",
-            'word': logData['word'] ?? "", // Use newWord for consistency
-            'type': logData['type'] ?? "Unknown Type",
-            'timestamp': logData['timestamp'] ?? 0,
-            'tileLetter': logData['tileLetter'], // For flip_tile
-            'tileId': logData['tileId'], // For flip_tile
-          };
-        }).toList();
-        newLogs.sort((b, a) => (a['timestamp'] as num)
-            .compareTo(b['timestamp'] as num)); // Cast to num
+      final data = event.snapshot.value as Map<dynamic, dynamic>? ?? {};
 
-        if (mounted) {
-          setState(() {
-            _logs = newLogs;
-          });
-        }
-      } else {
-        //snapshot is null
-        if (mounted) {
-          setState(() {
-            _logs = [];
-          });
-        }
-      }
-    }, onError: (error) {
-      //added error handling
-      print("Firebase error: $error");
-    });
+      List<Map<String, dynamic>> newLogs = data.entries.map((entry) {
+        final logData = entry.value as Map<dynamic, dynamic>;
+        return {
+          'playerId': logData['playerId'] ?? "Unknown Player",
+          'word': logData['word'] ?? "",
+          'type': logData['type'] ?? "Unknown Type",
+          'timestamp': logData['timestamp'] ?? 0,
+          'tileLetter': logData['tileLetter'],
+          'tileId': logData['tileId'],
+        };
+      }).toList();
+
+      newLogs.sort(
+          (b, a) => (a['timestamp'] as num).compareTo(b['timestamp'] as num));
+
+      setState(() {
+        _logs = newLogs;
+      });
+    }, onError: (error) {});
   }
 
   @override
@@ -80,18 +71,14 @@ class _GameLogState extends State<GameLog> {
 
   @override
   Widget build(BuildContext context) {
-    var screenSize = MediaQuery.of(context).size;
-    if (screenSize.width < 600) {
-      // Assuming 600 as the threshold for mobile screens
-      return SizedBox.shrink(); // Return an empty widget
-    }
+    if (MediaQuery.of(context).size.width < 600) return SizedBox.shrink();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
+        const Text(
           "Game Log",
-          style: const TextStyle(
+          style: TextStyle(
               fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white),
         ),
         const SizedBox(height: 5),
@@ -99,14 +86,11 @@ class _GameLogState extends State<GameLog> {
           child: _logs.isEmpty
               ? const Center(
                   child: Text("No actions yet",
-                      style: TextStyle(color: Colors.white70)),
-                )
+                      style: TextStyle(color: Colors.white70)))
               : ListView.builder(
-                  reverse: false, // Most recent at bottom
                   itemCount: _logs.length,
                   itemBuilder: (context, index) {
-                    var log = _logs[index];
-                    return _buildLogMessage(log);
+                    return _buildLogMessage(_logs[index]);
                   },
                 ),
         ),
@@ -115,227 +99,145 @@ class _GameLogState extends State<GameLog> {
   }
 
   Widget _buildLogMessage(Map<String, dynamic> log) {
-    // print("Log action: ${log['type']}, Player: ${log['playerId']}, Word: ${log['word']}, TileLetter: ${log['tileLetter']}, TileId: ${log['tileId']}");
+    final username = widget.playerIdToUsernameMap[log['playerId']] ?? 'bing';
+    final String message = _getLogMessage(log, username);
+    final Color textColor = _getTextColor(log['type']);
+    final Color tileBackgroundColor = _getTileColor(log['type']);
+    final List<Widget> tileWidgets =
+        _buildWordTiles(log['word'], tileBackgroundColor);
 
-    String message;
-    Color textColor = Colors.white;
-    List<Widget> tileWidgets = [];
-    Color tileBackgroundColor = Colors.purple[900]!; // Default background
-    switch (log['type']) {
-      case 'flip_tile':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} flipped: ";
-        if (log['tileLetter'] != null) {
-          tileWidgets.add(
-            TileWidget(
-              letter: log['tileLetter'],
-              tileId: log['tileId'].toString(),
-              onClickTile: (_, __, ___) {},
-              isSelected: false,
-              backgroundColor: tileBackgroundColor,
-              tileSize: widget.tileSize,
-            ),
-          );
-        }
-        break;
-
-      case 'MIDDLE_WORD':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted: ";
-        textColor = Colors.green; // Valid word
-        tileBackgroundColor = Colors.purple[900]!; // Valid word background
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(
-              TileWidget(
-                letter: letter,
-                tileId: UniqueKey().toString(),
-                onClickTile: (_, __, ___) {},
-                isSelected: false,
-                backgroundColor: tileBackgroundColor,
-                tileSize: widget.tileSize,
-              ),
-            );
-          }
-        }
-        break;
-      case 'OWN_WORD_IMPROVEMENT':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted: ";
-        textColor = Colors.green; // Valid word
-        tileBackgroundColor = Colors.purple[900]!; // Valid word background
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(
-              TileWidget(
-                letter: letter,
-                tileId: UniqueKey().toString(),
-                onClickTile: (_, __, ___) {},
-                isSelected: false,
-                backgroundColor: tileBackgroundColor,
-                tileSize: widget.tileSize,
-              ),
-            );
-          }
-        }
-        break;
-      case 'STEAL_WORD':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} stole! ";
-        textColor = Colors.green; // Valid word
-        tileBackgroundColor = Colors.purple[900]!; // Valid word background
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(
-              TileWidget(
-                letter: letter,
-                tileId: UniqueKey().toString(),
-                onClickTile: (_, __, ___) {},
-                isSelected: false,
-                backgroundColor: tileBackgroundColor,
-                tileSize: widget.tileSize,
-              ),
-            );
-          }
-        }
-        break;
-
-      case 'INVALID_LENGTH':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted a word without enough letters: ";
-        textColor = Colors.red;
-        tileBackgroundColor = Colors.red[900]!; // Invalid word background
-
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(TileWidget(
-              letter: letter,
-              tileId: UniqueKey().toString(),
-              onClickTile: (_, __, ___) {},
-              isSelected: false,
-              backgroundColor: tileBackgroundColor,
-              tileSize: widget.tileSize,
-            ));
-          }
-        }
-        break;
-      case 'INVALID_NO_MIDDLE':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted a word without using tiles from the middle: ";
-        textColor = Colors.red;
-        tileBackgroundColor = Colors.red[900]!; // Invalid word background
-
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(TileWidget(
-              letter: letter,
-              tileId: UniqueKey().toString(),
-              onClickTile: (_, __, ___) {},
-              isSelected: false,
-              backgroundColor: tileBackgroundColor,
-              tileSize: widget.tileSize,
-            ));
-          }
-        }
-        break;
-      case 'INVALID_LETTERS_USED':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted a word without valid letters: ";
-        textColor = Colors.red;
-        tileBackgroundColor = Colors.red[900]!; // Invalid word background
-
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(TileWidget(
-              letter: letter,
-              tileId: UniqueKey().toString(),
-              onClickTile: (_, __, ___) {},
-              isSelected: false,
-              backgroundColor: tileBackgroundColor,
-              tileSize: widget.tileSize,
-            ));
-          }
-        }
-        break;
-      case 'INVALID_WORD_NOT_IN_DICTIONARY':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted a word not in the dictionary! ";
-        textColor = Colors.red;
-        tileBackgroundColor = Colors.red[900]!; // Invalid word background
-
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(TileWidget(
-              letter: letter,
-              tileId: UniqueKey().toString(),
-              onClickTile: (_, __, ___) {},
-              isSelected: false,
-              backgroundColor: tileBackgroundColor,
-              tileSize: widget.tileSize,
-            ));
-          }
-        }
-        break;
-      case 'INVALID_UNKNOWN_WHY':
-        message =
-            "Player ${log['playerId'].toString().substring(0, 4)} submitted an invalid word: ";
-        textColor = Colors.red;
-        tileBackgroundColor = Colors.red[900]!; // Invalid word background
-
-        if (log['word'] != null) {
-          for (var letter in log['word'].split('')) {
-            tileWidgets.add(TileWidget(
-              letter: letter,
-              tileId: UniqueKey().toString(),
-              onClickTile: (_, __, ___) {},
-              isSelected: false,
-              backgroundColor: tileBackgroundColor,
-              tileSize: widget.tileSize,
-            ));
-          }
-        }
-        break;
-      default:
-        message =
-            "Unknown action by Player ${log['playerId'].toString().substring(0, 4)}";
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0, horizontal: 8.0),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.black54,
-          borderRadius: BorderRadius.circular(8),
+    // Add TileWidget for flip_tile action
+    if (log['type'] == 'flip_tile' && log['tileLetter'] != null) {
+      tileWidgets.add(
+        TileWidget(
+          tile: Tile(
+            letter: log['tileLetter'],
+            location: 'gameLog',
+            tileId: log['tileId'].toString(),
+          ),
+          onClickTile: (_, __) {},
+          isSelected: false,
+          backgroundColor: tileBackgroundColor,
+          tileSize: widget.tileSize,
         ),
-        padding: const EdgeInsets.all(10),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      );
+    }
+    return Padding(
+      padding: const EdgeInsets.all(10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (tileWidgets.length > 1) ...[
+            Text(
+              message,
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: textColor,
+              ),
+            ),
+            const SizedBox(height: 4),
+            Wrap(
+              children: tileWidgets,
+            ),
+          ] else ...[
+            // Single tile or no tile case: Message and tile(s) on the same line
             Wrap(
               crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 4.0,
               children: [
                 Text(
                   message,
-                  style:
-                      TextStyle(fontWeight: FontWeight.bold, color: textColor),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: textColor,
+                  ),
                 ),
                 ...tileWidgets,
               ],
             ),
-            const SizedBox(height: 2),
-            Text(
-              _formatTimestamp(log['timestamp']),
-              style: const TextStyle(fontSize: 10, color: Colors.white54),
-            ),
           ],
-        ),
+          const SizedBox(height: 4),
+          Text(
+            _formatTimestamp(log['timestamp']),
+            style: const TextStyle(fontSize: 10, color: Colors.white54),
+          ),
+        ],
       ),
     );
   }
 
+  String _getLogMessage(Map<String, dynamic> log, String username) {
+    switch (log['type']) {
+      case 'flip_tile':
+        return "$username flipped:";
+      case 'MIDDLE_WORD':
+      case 'OWN_WORD_IMPROVEMENT':
+        return "$username submitted:";
+      case 'STEAL_WORD':
+        return "$username stole!";
+      case 'INVALID_LENGTH':
+        return "$username submitted a word without enough letters:";
+      case 'INVALID_NO_MIDDLE':
+        return "$username submitted a word without using tiles from the middle:";
+      case 'INVALID_LETTERS_USED':
+        return "$username submitted a word without valid letters:";
+      case 'INVALID_WORD_NOT_IN_DICTIONARY':
+        return "$username submitted a word not in the dictionary!";
+      case 'INVALID_UNKNOWN_WHY':
+        return "$username submitted an invalid word:";
+      default:
+        return "Unknown action by Player $username";
+    }
+  }
+
+  Color _getTextColor(String type) {
+    return {
+          'MIDDLE_WORD': Colors.green,
+          'OWN_WORD_IMPROVEMENT': Colors.green,
+          'STEAL_WORD': Colors.green,
+          'INVALID_LENGTH': Colors.red,
+          'INVALID_NO_MIDDLE': Colors.red,
+          'INVALID_LETTERS_USED': Colors.red,
+          'INVALID_WORD_NOT_IN_DICTIONARY': Colors.red,
+          'INVALID_UNKNOWN_WHY': Colors.red,
+        }[type] ??
+        Colors.white;
+  }
+
+  Color _getTileColor(String type) {
+    return {
+          'MIDDLE_WORD': Colors.purple[900]!,
+          'OWN_WORD_IMPROVEMENT': Colors.purple[900]!,
+          'STEAL_WORD': Colors.purple[900]!,
+          'INVALID_LENGTH': Colors.red[900]!,
+          'INVALID_NO_MIDDLE': Colors.red[900]!,
+          'INVALID_LETTERS_USED': Colors.red[900]!,
+          'INVALID_WORD_NOT_IN_DICTIONARY': Colors.red[900]!,
+          'INVALID_UNKNOWN_WHY': Colors.red[900]!,
+        }[type] ??
+        Colors.purple[900]!;
+  }
+
+  List<Widget> _buildWordTiles(String? word, Color backgroundColor) {
+    if (word == null || word.isEmpty) return [];
+    return word.split('').map((letter) {
+      return TileWidget(
+        tile: Tile(
+          letter: letter,
+          location: 'gameLog',
+          tileId: UniqueKey().toString(),
+        ),
+        onClickTile: (_, __) {},
+        isSelected: false,
+        backgroundColor: backgroundColor,
+        tileSize: widget.tileSize,
+      );
+    }).toList();
+  }
+
   String _formatTimestamp(dynamic timestamp) {
     if (timestamp == null || timestamp == 0) return "Unknown time";
-    DateTime date = DateTime.fromMillisecondsSinceEpoch(timestamp);
-    return "${date.hour}:${date.minute.toString().padLeft(2, '0')}";
+    final date = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    return "${date.hour}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}";
   }
 }

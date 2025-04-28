@@ -1,17 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class TileWidget extends StatefulWidget {
-  final String letter;
-  final String tileId;
-  final Function(String, String, bool) onClickTile;
+  final Tile tile;
+  final Function(Tile, bool) onClickTile;
   final bool isSelected;
   final Color backgroundColor; // Background color property
   final double tileSize;
 
   const TileWidget({
     Key? key,
-    required this.letter,
-    required this.tileId,
+    required this.tile,
     required this.onClickTile,
     required this.tileSize,
     this.isSelected = false,
@@ -27,7 +26,7 @@ class _TileWidgetState extends State<TileWidget> {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: () {
-        widget.onClickTile(widget.letter, widget.tileId, !widget.isSelected);
+        widget.onClickTile(widget.tile, !widget.isSelected);
       },
       child: Container(
         width: widget.tileSize,
@@ -43,7 +42,7 @@ class _TileWidgetState extends State<TileWidget> {
         ),
         child: Center(
           child: Text(
-            widget.letter,
+            widget.tile.letter ?? '',
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: widget.tileSize * 0.5,

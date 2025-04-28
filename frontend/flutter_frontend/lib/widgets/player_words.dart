@@ -1,17 +1,19 @@
 import 'package:flutter/material.dart';
 import 'word_widget.dart';
 import 'package:shimmer/shimmer.dart';
+import 'package:flutter_frontend/classes/tile.dart';
+
 
 class PlayerWords extends StatelessWidget {
   final String playerId;
   final String username;
   final List<Map<String, dynamic>> words;
   final Map<String, Color> playerColors;
-  final Function(String, String, bool) onClickTile;
+  final Function(Tile, bool) onClickTile;
   final Set<String> officiallySelectedTileIds;
   final Set<String> potentiallySelectedTileIds;
   final VoidCallback onClearSelection;
-  final List<Map<String, dynamic>> allTiles;
+  final List<Tile> allTiles;
   final double tileSize;
   final bool isCurrentPlayerTurn; 
   final int score; 
@@ -55,20 +57,18 @@ class PlayerWords extends StatelessWidget {
           spacing: 2.0, // Space between cards
           runSpacing: 2.0, // Space between lines
           children: words.map((word) {
-            List<Map<String, dynamic>> tiles = [];
+            List<Tile> tiles = [];
             if (word['tileIds'] is List<dynamic>) {
               tiles = (word['tileIds'] as List<dynamic>)
                   .map((tileId) {
                     final matchingTile = allTiles.firstWhere(
                       (tile) =>
-                          tile.containsKey('tileId') &&
-                          tile['tileId'].toString() == tileId.toString(),
-                      orElse: () => <String, dynamic>{},
+                      tile.tileId == tileId,
+                      orElse: () => Tile(tileId: '', letter: '', location: ''),
                     );
-                    return matchingTile.isEmpty ? null : matchingTile;
+                    return matchingTile.tileId == '' ? null : matchingTile;
                   })
-                  .where((tile) => tile != null)
-                  .cast<Map<String, dynamic>>()
+                  .whereType<Tile>()
                   .toList();
             }
 

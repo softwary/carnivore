@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/screens/game_screen.dart';
 import 'package:flutter_frontend/config.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class ApiService {
   Future<void> joinGameApi(BuildContext context, String gameId, String token,
@@ -107,20 +108,16 @@ class ApiService {
   }
 
   Future<http.Response> sendTileIds(String gameId, String token,
-    List<Map<String, String>> selectedTiles) async {
+    List<Tile> selectedTiles) async {
     final url = Uri.parse('${Config.backendUrl}/submit-word');
-
     // Convert tileIds to integers
     final List<int> tileIdsAsIntegers = selectedTiles
-        .map((tile) => tile['tileId'] as String)
-        .map(int.parse)
-        .toList();
+      .map((tile) => tile.tileId).cast<int>().toList();
 
     final Map<String, dynamic> payload = {
       'game_id': gameId,
       'tile_ids': tileIdsAsIntegers,
     };
-    print("apiservice.sendTileIds Payload: $payload");
 
     try {
       final response = await http.post(

@@ -4,6 +4,7 @@ import 'package:flutter_frontend/services/api_service.dart';
 import 'package:flutter_frontend/screens/create_account_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class MyHomePage extends StatefulWidget {
   final String title;
@@ -15,10 +16,10 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _gameIdController =
-      TextEditingController(text: '1337');
+      TextEditingController(text: '');
   final FocusNode _focusNode = FocusNode();
   final TextEditingController _usernameController =
-      TextEditingController(text: 'Nikki');
+      TextEditingController(text: '');
   final AuthService _authService = AuthService();
   final ApiService _apiService = ApiService();
   String? token;
@@ -122,10 +123,12 @@ class _MyHomePageState extends State<MyHomePage> {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: 'Wordivore'.split('').map((letter) {
                       return TileWidget(
-                        letter: letter,
-                        tileId: letter.hashCode.toString(),
-                        onClickTile:
-                            (String tileId, String letter, bool isSelected) {},
+                        tile: Tile(
+                          letter: letter,
+                          location: '',
+                          tileId: letter.hashCode.toString(),
+                        ),
+                        onClickTile: (Tile tile, bool isSelected) {},
                         isSelected: false,
                         tileSize: tileSize, // Adjusted tile size
                       );
@@ -211,7 +214,7 @@ The game ends when there are no more tiles left, and the player with the most ti
                         if (token != null) {
                           _apiService.joinGameApi(
                             context,
-                            value,
+                            value.trim(),
                             token!,
                             username: _usernameController.text,
                           );
@@ -246,7 +249,7 @@ The game ends when there are no more tiles left, and the player with the most ti
                           context,
                           _gameIdController.text,
                           token!,
-                          username: _usernameController.text,
+                          username: _usernameController.text.trim(),
                         );
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(

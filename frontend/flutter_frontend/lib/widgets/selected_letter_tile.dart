@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_frontend/classes/tile.dart';
 
 class SelectedLetterTile extends StatefulWidget {
-  final String letter;
+  final Tile tile;
   final VoidCallback onRemove;
   final Color textColor;
   final Color backgroundColor;
@@ -9,7 +10,7 @@ class SelectedLetterTile extends StatefulWidget {
 
   const SelectedLetterTile({
     Key? key,
-    required this.letter,
+    required this.tile,
     required this.onRemove,
     required this.tileSize,
     this.textColor = Colors.white,
@@ -39,7 +40,7 @@ class _TileWidgetState extends State<SelectedLetterTile> {
           ),
           child: Center(
             child: Text(
-              widget.letter,
+              widget.tile.letter ?? '',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: widget.tileSize * 0.5,
