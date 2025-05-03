@@ -58,10 +58,10 @@ class PlayerWords extends StatelessWidget {
               ),
         const SizedBox(width: 8),
         SizedBox(
-          height: 8,
+          height: 12,
           width: double.infinity, // fills available width
           child: ClipRRect(
-            borderRadius: BorderRadius.circular(4),
+            borderRadius: BorderRadius.circular(2),
             child: LinearProgressIndicator(
               value: pct,
               backgroundColor: Colors.grey[700],
