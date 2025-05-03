@@ -115,7 +115,8 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           middleTiles =
               allTiles.where((tile) => tile.location == 'middle').toList();
 
-          tilesLeftCount = allTiles.where((tile) => (tile.letter?.isEmpty ?? true)).length;
+          tilesLeftCount =
+              allTiles.where((tile) => (tile.letter?.isEmpty ?? true)).length;
 
           // Initialize playerColorMap
           final players = gameData!['players'] as Map<String, dynamic>;
@@ -1067,6 +1068,9 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                             final score = gameData?['players']
                                     [playerWordData['playerId']]['score'] ??
                                 0;
+                            final maxScoreToWin =
+                                gameData!['max_score_to_win_per_player'] as int;
+
                             return PlayerWords(
                               username: playerWordData['username'],
                               playerId: playerWordData['playerId'],
@@ -1082,6 +1086,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                               tileSize: tileSize,
                               isCurrentPlayerTurn: isCurrentPlayerTurn,
                               score: score,
+                              maxScoreToWin: maxScoreToWin,
                             );
                           },
                         ),
@@ -1101,8 +1106,8 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                 children: [
                                   Text(
                                     gameData?['tiles'] != null
-                                      ? 'Tiles ($tilesLeftCount Left):'
-                                      : '',
+                                        ? 'Tiles ($tilesLeftCount Left):'
+                                        : '',
                                     style: const TextStyle(
                                       fontSize: 16,
                                       color: Colors.white,
@@ -1111,12 +1116,12 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                                   const SizedBox(height: 5),
                                   middleTiles.isEmpty
                                       ? Expanded(
-                                            child: Text(
-                                              "Flip a tile to begin – it's ${playerIdToUsernameMap[currentPlayerTurn]}'s turn to flip a tile!",
-                                              style: TextStyle(
-                                                  fontSize: 16,
-                                                  color: Colors.white),
-                                            ),
+                                          child: Text(
+                                            "Flip a tile to begin – it's ${playerIdToUsernameMap[currentPlayerTurn]}'s turn to flip a tile!",
+                                            style: TextStyle(
+                                                fontSize: 16,
+                                                color: Colors.white),
+                                          ),
                                         )
                                       :
 

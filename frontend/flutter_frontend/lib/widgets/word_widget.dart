@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'tile_widget.dart';
-import 'selected_letter_tile.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 
 class WordCard extends StatefulWidget {
@@ -60,14 +59,12 @@ class _WordCardState extends State<WordCard> {
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
           child: Column(
-            mainAxisSize:
-                MainAxisSize.min,
+            mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               if (widget.tiles.isNotEmpty)
                 Container(
-                  alignment:
-                      Alignment.centerLeft,
+                  alignment: Alignment.centerLeft,
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     mainAxisAlignment: MainAxisAlignment.center,

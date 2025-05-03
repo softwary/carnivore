@@ -75,9 +75,14 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
         points_to_add_to_user_id = 0
         points_to_remove_from_robbed_user = 0
         robbed_user_id = ''
+        winner_found = False
 
         if not current_data:
             raise GameNotFoundError(f"Game with ID {game_id} not found.")
+        
+        # Check for winner by seeing if this submitting player has max score they need
+        max_score_to_win_per_player = current_data.get('max_score_to_win_per_player')
+
 
         # ✅ Step 1: Identify Submission Type INSIDE the Transaction
         submission_type, extra_data = identifyWordSubmissionType(
@@ -228,6 +233,13 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
             current_data['players'][user_id] = submitting_player_data
             logger.debug(
                 f"[submit_word] Player score updated: {submitting_player_data['score']}")
+            # Check for winner
+            if submitting_player_data['score'] >= max_score_to_win_per_player:
+                winner_found = True
+                current_data['status'] = 'winnerFound'
+                current_data['winner'] = submitting_player_data
+                logger.debug(
+                    f"🎉 [submit_word] Player {user_id} has reached the winning score: {submitting_player_data['score']}")
         else:
             logger.error(
                 f"[submit_word] Player ID {user_id} not found in current data.")
@@ -259,7 +271,7 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                     f"[submit_word] Player ID {user_id} not found in current data.")
                 return None
         # 8. Advance Turn if the word is valid
-        if submission_type in (
+        if not winner_found and submission_type in (
             WordSubmissionType.MIDDLE_WORD,
             WordSubmissionType.OWN_WORD_IMPROVEMENT,
             WordSubmissionType.STEAL_WORD,
@@ -550,6 +562,13 @@ def add_player_to_game(game_id, user_id, username):
                                 'score': 0, 'turn': turn, 'turnOrder': order}
 
         current_data['players'] = players
+
+        # Recalculate max_score_to_win_per_player: total tiles / number of players
+        total_tiles = len(current_data.get('tiles', []))
+        num_players = len(players)
+        if num_players > 0:
+            current_data['max_score_to_win_per_player'] = total_tiles // num_players
+
         return current_data
 
     try:
@@ -604,6 +623,8 @@ def create_game(user_id, username):
             {"letter": "", "location": "unflippedTilesPool", "tileId": i}
             for i in range(num_tiles)
         ]
+        max_score_to_win_per_player = num_tiles
+
         print("🔄 remainingLetters = ", remainingLetters)
         print("🔄 num_tiles = ", num_tiles)
 
@@ -614,7 +635,9 @@ def create_game(user_id, username):
             "remainingLetters": remainingLetters,
             "tiles": tiles,
             "words": [],
-            "players": {}
+            "players": {},
+            "status": "inProgress",
+            "max_score_to_win_per_player": max_score_to_win_per_player,
         }
         current_data[game_id] = new_game
         return current_data

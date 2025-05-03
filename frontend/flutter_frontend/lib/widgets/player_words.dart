@@ -3,7 +3,6 @@ import 'word_widget.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 
-
 class PlayerWords extends StatelessWidget {
   final String playerId;
   final String username;
@@ -15,8 +14,9 @@ class PlayerWords extends StatelessWidget {
   final VoidCallback onClearSelection;
   final List<Tile> allTiles;
   final double tileSize;
-  final bool isCurrentPlayerTurn; 
-  final int score; 
+  final bool isCurrentPlayerTurn;
+  final int score;
+  final int maxScoreToWin;
 
   const PlayerWords({
     Key? key,
@@ -32,14 +32,18 @@ class PlayerWords extends StatelessWidget {
     this.tileSize = 36,
     required this.isCurrentPlayerTurn,
     required this.score,
+    required this.maxScoreToWin,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
+    final pct =
+        maxScoreToWin > 0 ? (score / maxScoreToWin).clamp(0.0, 1.0) : 0.0;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-                isCurrentPlayerTurn
+        isCurrentPlayerTurn
             ? Shimmer.fromColors(
                 baseColor: Colors.white,
                 highlightColor: Colors.yellow,
@@ -52,6 +56,19 @@ class PlayerWords extends StatelessWidget {
                 '$username ($score)',
                 style: const TextStyle(fontSize: 16, color: Colors.white),
               ),
+        const SizedBox(width: 8),
+        SizedBox(
+          height: 8,
+          width: double.infinity, // fills available width
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(4),
+            child: LinearProgressIndicator(
+              value: pct,
+              backgroundColor: Colors.grey[700],
+              valueColor: AlwaysStoppedAnimation(Colors.greenAccent),
+            ),
+          ),
+        ),
         const SizedBox(height: 10),
         Wrap(
           spacing: 2.0, // Space between cards
@@ -62,8 +79,7 @@ class PlayerWords extends StatelessWidget {
               tiles = (word['tileIds'] as List<dynamic>)
                   .map((tileId) {
                     final matchingTile = allTiles.firstWhere(
-                      (tile) =>
-                      tile.tileId == tileId,
+                      (tile) => tile.tileId == tileId,
                       orElse: () => Tile(tileId: '', letter: '', location: ''),
                     );
                     return matchingTile.tileId == '' ? null : matchingTile;
@@ -78,8 +94,7 @@ class PlayerWords extends StatelessWidget {
                   child: WordCard(
                     tiles: tiles,
                     currentOwnerUserId: playerId,
-                    onWordTap: (tileIds) {
-                    },
+                    onWordTap: (tileIds) {},
                     playerColors: playerColors,
                     onClickTile: onClickTile,
                     officiallySelectedTileIds: officiallySelectedTileIds,
