@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+import 'package:vector_math/vector_math_64.dart' as vmat;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_database/firebase_database.dart';
@@ -34,6 +36,9 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   late AnimationController _flipController;
   late Animation<double> _flipAnimation;
+  late AnimationController _blinkController;
+  late Animation<double> _blinkOpacityAnimation;
+  bool isCurrentUsersTurn = false;
   bool isFlipping = false;
 
   List<Tile> inputtedLetters = [];
@@ -80,10 +85,49 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
 
     FocusManager.instance.primaryFocus?.unfocus();
+
+    _blinkController = AnimationController(
+      vsync: this, // Requires TickerProviderStateMixin
+      duration: const Duration(milliseconds: 800), // Speed of one blink cycle
+    );
+
+    _blinkOpacityAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(parent: _blinkController, curve: Curves.easeInOut),
+    );
+
+    _blinkController.addListener(() {
+      if (mounted) {
+        setState(() {});
+      }
+    });
+
+    if (isCurrentUsersTurn) {
+      _blinkController.repeat(reverse: true);
+    }
+  }
+
+  void _updateTurnState(bool newTurnState) {
+    if (!mounted) return;
+    setState(() {
+      isCurrentUsersTurn = newTurnState;
+      if (isCurrentUsersTurn) {
+        if (!_blinkController.isAnimating) {
+          _blinkController.repeat(reverse: true);
+        }
+      } else {
+        if (_blinkController.isAnimating) {
+          _blinkController.stop();
+          // Optionally reset opacity to a non-blinking state, e.g., full opacity or invisible
+          _blinkController.value = _blinkController
+              .upperBound; // Reset to full opacity if needed when stopped
+        }
+      }
+    });
   }
 
   @override
   void dispose() {
+    _blinkController.dispose();
     _flipController.dispose();
     super.dispose();
   }
@@ -175,6 +219,11 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             gameData ??= {}; // Ensure gameData is not null
             gameData!['tiles'] = <Tile>[];
           }
+          // Determine the new turn state and update the blink controller
+          if (currentUserId != null) {
+            _updateTurnState(currentUserId == currentPlayerTurn);
+          }
+
         });
       } else {
         print(
@@ -959,12 +1008,23 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     final isCurrentUsersTurn =
         currentUserId != null && currentUserId == currentPlayerTurn;
 
+    final preRotatedText = Transform.rotate(
+      angle: -math.pi / 4,
+      child: Text(
+        'FLIP',
+        style: TextStyle(
+          color: Colors.black,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 1.2,
+        ),
+      ),
+    );
     Color getBackgroundColor(Tile tile) {
       switch (tile.tileId) {
         case 'invalid':
           return Colors.red;
         case 'TBD':
-          return Colors.yellow; // Or your desired determining color
+          return Colors.yellow;
         case 'valid':
           return const Color(0xFF4A148C);
         default:
@@ -1264,19 +1324,45 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             const SizedBox(width: 10),
             AnimatedBuilder(
               animation: _flipAnimation,
-              builder: (context, child) {
-                // flip 0 to 180 degrees (in radians)
-                final angle = _flipAnimation.value * 3.14159;
+              child: preRotatedText,
+              builder: (context, animatedChild) {
+                final animationValue = _flipAnimation.value;
+                final angle =
+                    -animationValue * math.pi; // Flips from 0 to -180 degrees
+                final isBack = angle.abs() > (math.pi / 2);
+
+                final axis = vmat.Vector3(1, -1, 0).normalized();
+
+                final transformMatrix = Matrix4.identity()
+                  ..setEntry(3, 2, 0.001) // Perspective
+                  ..rotate(axis, angle); // Main rotation for the flip
+
+                final Matrix4 unmirrorTransform;
+                if (isBack) {
+                  // Counter-rotate the child to appear correctly from the "back"
+                  unmirrorTransform = Matrix4.identity()..rotate(axis, math.pi);
+                } else {
+                  unmirrorTransform = Matrix4.identity();
+                }
+
+                Color borderColor =
+                     const Color.fromARGB(255, 255, 0, 251); // Default active border color
+                double borderWidth = 5.0;
+
+                if (isCurrentUsersTurn && _blinkController.isAnimating) {
+                  borderColor =
+                      borderColor.withOpacity(_blinkOpacityAnimation.value);
+                } else if (isCurrentUsersTurn &&
+                    !_blinkController.isAnimating) {
+                  borderColor = const Color.fromARGB(255, 255, 0, 251);
+                }
 
                 return Transform(
                   alignment: Alignment.center,
-                  transform: Matrix4.identity()
-                    ..setEntry(3, 2, 0.001) // adds depth for 3D effect
-                    ..rotateY(angle),
+                  transform: transformMatrix,
                   child: FloatingActionButton(
                     onPressed: isCurrentUsersTurn && !isFlipping
                         ? () {
-                            setState(() => isFlipping = true);
                             _flipController.forward(from: 0);
                             _flipNewTile();
                           }
@@ -1286,11 +1372,26 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                         : Colors.grey.shade400,
                     foregroundColor: Colors.black,
                     heroTag: 'flip',
-                    child: const Icon(Icons.refresh_rounded),
+                    shape: isCurrentUsersTurn
+                        ? RoundedRectangleBorder(
+                            side: BorderSide(
+                              color: borderColor,
+                              width: borderWidth,
+                            ),
+                            borderRadius: BorderRadius.circular(16.0),
+                          )
+                        : RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16.0),
+                          ),
+                    child: Transform(
+                      alignment: Alignment.center,
+                      transform: unmirrorTransform,
+                      child: animatedChild,
+                    ),
                   ),
                 );
               },
-            ),
+            )
           ],
         ),
       ),
