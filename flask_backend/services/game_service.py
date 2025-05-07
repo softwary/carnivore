@@ -212,20 +212,7 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                         f"[submit_word] Tile ID {tile_id} not found in current data.")
                     return None
 
-        # 6. Update Remaining Letters
-        remaining_letters = current_data.get('remainingLetters', {})
-        for tile in tiles:
-            if tile and 'letter' in tile:
-                letter = tile['letter']
-                if letter in remaining_letters and remaining_letters[letter] > 0:
-                    remaining_letters[letter] -= 1
-                    if remaining_letters[letter] == 0:
-                        del remaining_letters[letter]
-        current_data['remainingLetters'] = remaining_letters
-        logger.debug(
-            f"[submit_word] Remaining letters updated: {remaining_letters}")
-
-        # 7. Update Player Score for submitting player & (optionally) robbed user
+        # 6. Update Player Score for submitting player & (optionally) robbed user
         submitting_player_data = current_data['players'].get(user_id)
         if submitting_player_data:
             submitting_player_data['score'] = (submitting_player_data.get(
@@ -270,7 +257,7 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 logger.error(
                     f"[submit_word] Player ID {user_id} not found in current data.")
                 return None
-        # 8. Advance Turn if the word is valid
+        # 87. Advance Turn if the word is valid
         if not winner_found and submission_type in (
             WordSubmissionType.MIDDLE_WORD,
             WordSubmissionType.OWN_WORD_IMPROVEMENT,
@@ -281,7 +268,7 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 player_data['turn'] = (player_id == user_id)
                 logger.debug(f"[submit_word] Player turn set to: {user_id}")
 
-        # 9. Add Game Action
+        # 8. Add Game Action
         action = {
             'type': submission_type.name,
             'playerId': user_id,
@@ -505,8 +492,13 @@ def flip_tile(game_id, user_id):
         return current_data
 
     try:
-        game_ref.transaction(flip_tile_transaction)
+        updated_data = game_ref.transaction(flip_tile_transaction)
         print(f"Tile flipped successfully for game ID {game_id}.")
+        # Log the remainingLetters after choosing a letter
+        remaining_letters = updated_data.get('remainingLetters', {})
+        logger.debug(
+            f"🔄 remainingLetters after choosing a letter: {remaining_letters}")
+
         return True
     except db.TransactionAbortedError as e:
         print(f"Transaction failed for flip_tile in game ID {game_id}: {e}")
