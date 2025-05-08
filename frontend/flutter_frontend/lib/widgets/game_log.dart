@@ -122,9 +122,7 @@ class _GameLogState extends State<GameLog> {
 
   Widget _buildLogMessage(Map<String, dynamic> log) {
     final username = widget.playerIdToUsernameMap[log['playerId']] ?? 'bing';
-    print("👀 Log: $log");
     final String message = _getLogMessage(log, username);
-    print("👀 Message: $message");
     final Color textColor = _getTextColor(log['type']);
     final Color tileBackgroundColor = _getTileColor(log['type']);
     final List<Widget> tileWidgets =
@@ -200,7 +198,6 @@ class _GameLogState extends State<GameLog> {
         final originalWord = log['originalWord'] as String?;
         return "$username improved their word $originalWord:";
       case 'STEAL_WORD':
-        print("⭐️ Steal word log: $log");
         final robbedId = log['robbedUserId'] as String;
         final robbedName = widget.playerIdToUsernameMap[robbedId] ?? robbedId;
         final stolenWord = log['stolenWord'] as String?;
