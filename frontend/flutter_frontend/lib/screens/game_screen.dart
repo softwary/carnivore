@@ -1,10 +1,11 @@
-import 'dart:math' as math;
-import 'package:vector_math/vector_math_64.dart' as vmat;
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
 import 'dart:collection';
+import 'dart:math' as math;
+import 'package:vector_math/vector_math_64.dart' as vmat;
 import 'package:flutter_frontend/widgets/tile_widget.dart';
 import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
@@ -12,8 +13,9 @@ import 'package:flutter/services.dart';
 import 'package:flutter_frontend/widgets/player_words.dart';
 import 'package:flutter_frontend/services/api_service.dart';
 import 'package:flutter_frontend/classes/tile.dart';
+import 'package:flutter_frontend/classes/game_data_provider.dart';
 
-class GameScreen extends StatefulWidget {
+class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
   final String username;
 
@@ -23,13 +25,14 @@ class GameScreen extends StatefulWidget {
   GameScreenState createState() => GameScreenState();
 }
 
-class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
+class GameScreenState extends ConsumerState<GameScreen>
+    with TickerProviderStateMixin {
   final ApiService _apiService = ApiService();
   String? currentUserId;
 
   late DatabaseReference gameRef;
   String currentPlayerTurn = '';
-  Map<String, dynamic>? gameData;
+  // Map<String, dynamic>? gameData;
   List<Tile> allTiles = [];
   List<Tile> middleTiles = [];
   late int tilesLeftCount;
@@ -67,7 +70,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    fetchGameData();
+    // fetchGameData();
 
     _flipController = AnimationController(
       duration: const Duration(milliseconds: 500),
@@ -142,96 +145,6 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  void fetchGameData() {
-    gameRef = FirebaseDatabase.instance.ref('games/${widget.gameId}');
-    gameRef.onValue.listen((event) {
-      final data = event.snapshot.value;
-
-      if (data is LinkedHashMap) {
-        setState(() {
-          gameData = jsonDecode(jsonEncode(data));
-          allTiles = List<Tile>.from(
-            (gameData!['tiles'] as List<dynamic>).map((item) {
-              return Tile.fromMap(item as Map<String, dynamic>);
-            }),
-          );
-          currentPlayerTurn = gameData?['currentPlayerTurn'] ?? '';
-          middleTiles =
-              allTiles.where((tile) => tile.location == 'middle').toList();
-
-          tilesLeftCount =
-              allTiles.where((tile) => (tile.letter?.isEmpty ?? true)).length;
-
-          // Initialize playerColorMap
-          final players = gameData!['players'] as Map<String, dynamic>;
-          int colorIndex = 0;
-          players.forEach((playerId, playerData) {
-            playerColorMap[playerId] =
-                playerColors[colorIndex % playerColors.length];
-            // print the username
-            playerIdToUsernameMap[playerId] = playerData['username'];
-            colorIndex++;
-          });
-
-          // Ensure gameData contains 'players', 'words', and 'tiles' keys and they are not null
-          if (gameData!.containsKey('players') &&
-              gameData!['players'] != null &&
-              gameData!.containsKey('words') &&
-              gameData!['words'] != null &&
-              gameData!.containsKey('tiles') &&
-              gameData!['tiles'] != null) {
-            // Process player words
-            playerWords = processPlayerWords(
-              Map<String, dynamic>.from(gameData!['players']),
-              List<Map<String, dynamic>>.from((gameData!['words'] as List)
-                  .map((item) => Map<String, dynamic>.from(item))),
-            );
-
-            // Sort playerWords to ensure current player's words are at the bottom
-            final String? userId = FirebaseAuth.instance.currentUser?.uid;
-            playerWords.sort((a, b) {
-              if (a['playerId'] == userId) return 1;
-              if (b['playerId'] == userId) return -1;
-              return 0;
-            });
-
-            // Ensure the current player's words are at the bottom
-            playerWords = playerWords
-                .where((word) => word['playerId'] != userId)
-                .toList()
-              ..addAll(playerWords.where((word) => word['playerId'] == userId));
-
-            // Process tiles
-            try {
-              gameData!['tiles'] = List<Tile>.from(
-                (gameData!['tiles'] as List<dynamic>).map((item) {
-                  return Tile.fromMap(item as Map<String, dynamic>);
-                }),
-              );
-            } catch (e) {
-              print("Error converting tiles: $e");
-              gameData!['tiles'] =
-                  <Tile>[]; // Initialize as empty list in case of error
-            }
-          } else {
-            // Handle the case where 'players', 'words', or 'tiles' is null
-            playerWords = [];
-            gameData ??= {}; // Ensure gameData is not null
-            gameData!['tiles'] = <Tile>[];
-          }
-          // Determine the new turn state and update the blink controller
-          if (currentUserId != null) {
-            _updateTurnState(currentUserId == currentPlayerTurn);
-          }
-
-        });
-      } else {
-        print(
-            "Data is not a LinkedHashMap: $data"); // Log if data is not a LinkedHashMap
-      }
-    });
-  }
-
   List<Map<String, dynamic>> processPlayerWords(
       Map<String, dynamic> players, List<Map<String, dynamic>> words) {
     List<Map<String, dynamic>> playerWords = [];
@@ -249,22 +162,18 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     return playerWords;
   }
 
-  /// Helper function to find tile location
-  String _findTileLocation(dynamic tileId) {
+  String _findTileLocation(List<Tile> allTiles, dynamic tileId) {
     return allTiles
-            .firstWhere(
-              (t) => t.tileId == tileId,
-              orElse: () => Tile(letter: '', tileId: '', location: ''),
-            )
+            .firstWhere((t) => t.tileId == tileId,
+                orElse: () => Tile(letter: '', tileId: '', location: ''))
             .location ??
         '';
   }
 
-  Future<void> _sendTileIds() async {
+  Future<void> _sendTileIds(Map<String, dynamic> gameData) async {
     // Assign locations based on `tileId`
     for (var tile in inputtedLetters) {
-      // print type of inputtedLetters tileId
-      tile.location = _findTileLocation(tile.tileId);
+      tile.location = _findTileLocation(allTiles, tile.tileId);
     }
 
     print(
@@ -304,7 +213,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       );
       print("This is the wordId trying to be stolen/taken: $wordId");
       // get this word out of gameData
-      final wordData = (gameData?['words'] as List).firstWhere(
+      final wordData = (gameData['words'] as List).firstWhere(
         (word) => word['wordId'] == wordId,
         orElse: () => null,
       );
@@ -543,7 +452,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  void _handleLetterTyped(String letter) {
+  void _handleLetterTyped(Map<String, dynamic> gameData, String letter) {
     print("##################################################################");
     print("######################Typed letter: $letter ######################");
     print("##################################################################");
@@ -582,8 +491,6 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
           .toString();
       print(
           "🌿✅✅✅✅ Only one tile found for letter $letter:...assignLetterToThisTileId --> tileId = $tileId");
-      // print(
-      //     "🌿🌿🌿 if there is only one letter option, and it is already in the officiallySelectedTile or inputtedLetters, etc, then it cannot be assigned! must be 'invalid'");
       // If the tileId is already in inputtedLetters or officiallySelectedTileIds, then it cannot be assigned
       if (officiallySelectedTileIds.contains(tileId) ||
           inputtedLetters
@@ -606,7 +513,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         print(
             "potentiallySelected[highlighted] tile IDs for after typing $letter: $potentiallySelectedTileIds");
         print("More than one letter typed, refining potential matches...");
-        _refinePotentialMatches();
+        _refinePotentialMatches(gameData);
       }
     });
   }
@@ -628,7 +535,6 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
       });
       return;
     }
-    // print("in _assignTileId, What are the existing inputtedLetters?: ")
     // 🔍 Collect used tile IDs from selected tiles
     final Set<String> usedTileIds = inputtedLetters
         .where((tile) => tile.tileId != 'TBD')
@@ -759,9 +665,6 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
                 "🔍 Matching middle tile it can be reassigned to: ${matchingMiddleTile.letter}, tileId: ${matchingMiddleTile.tileId}");
 
             if (matchingMiddleTile.tileId != '') {
-              // final tileId = matchingMiddleTile.tileId.toString();
-              // _assignLetterToThisTileId(selectedTile.letter, tileId);
-              // remove tileId from officiallySelectedTileIds
               officiallySelectedTileIds.remove(selectedTile.tileId);
               selectedTile.tileId = matchingMiddleTile.tileId.toString();
               officiallySelectedTileIds
@@ -781,30 +684,27 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
             }).toList()}");
   }
 
-  getWordData(String wordId) {
-    // This function should retrieve the word from the gameData based on the wordId
-    // Assuming gameData['words'] is a list of words with their respective IDs
-    final word = (gameData?['words'] as List).firstWhere(
+  Map<String, dynamic> getWordData(
+      Map<String, dynamic> gameData, String wordId) {
+    final word = (gameData['words'] as List).firstWhere(
       (word) => word['wordId'] == wordId,
       orElse: () => null,
     );
     return word;
   }
 
-  void _refinePotentialMatches() {
+  void _refinePotentialMatches(Map<String, dynamic> gameData) {
     final String? userId = FirebaseAuth.instance.currentUser?.uid;
     print("💼💼💼 Start of _refinePotentialMatches function");
 
     final String typedWord = inputtedLetters.map((tile) => tile.letter).join();
-    final List<String> typedWordLetters =
-        typedWord.split(''); // Convert to list for flexible checking
+    final List<String> typedWordLetters = typedWord.split('');
 
     print("💼 Current typed word: $typedWord");
 
     final Map<String, List<String>> letterToTileIds = {};
 
     for (var tile in allTiles) {
-      // Ensure the letter is not null or empty before adding
       if (tile.letter != null && tile.letter!.isNotEmpty) {
         letterToTileIds.putIfAbsent(tile.letter!, () => []);
         letterToTileIds[tile.letter!]!.add(tile.tileId.toString());
@@ -831,7 +731,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     } else if (!allSelectedLettersHaveMiddleMatch) {
       print("❌ Not all selected letters have a middle match");
 
-      final matchingWords = (gameData?['words'] as List).where((word) {
+      final matchingWords = (gameData['words'] as List).where((word) {
         final List<String> wordTileIds = (word['tileIds'] as List<dynamic>)
             .map((id) => id.toString())
             .toList();
@@ -900,7 +800,7 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
         // reassign the tileIds of the inputtedLetters to those tileIds
         print(
             "💀 calling _reassignTilesToWord with wordId = ${matchingWordToUse['wordId']}");
-        _reassignTilesToWord(matchingWordToUse['wordId']);
+        _reassignTilesToWord(gameData, matchingWordToUse['wordId']);
         print("just called _reassignTilesToWord");
         // for each tileId in tileIdsToReassignInputtedLettersToFromMatchingWord, find the corresponding tile in allTiles
         // and reassign the tileId of the inputtedLetters to that tileId
@@ -919,10 +819,10 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
     });
   }
 
-  _reassignTilesToWord(String wordId) {
+  _reassignTilesToWord(Map<String, dynamic> gameData, String wordId) {
     print("💀💀💀 Start of _reassignTilesToWord function, wordId = $wordId");
     // This function should reassign the tileIds of the inputtedLetters to the tileIds of the word with the given wordId
-    final word = getWordData(wordId);
+    final word = getWordData(gameData, wordId);
     if (word == null) {
       print("❌ Word not found for wordId: $wordId");
       return;
@@ -1003,398 +903,444 @@ class GameScreenState extends State<GameScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
-    var screenSize = MediaQuery.of(context).size;
-    final double tileSize = screenSize.width > 600 ? 40 : 25;
-    final isCurrentUsersTurn =
-        currentUserId != null && currentUserId == currentPlayerTurn;
+    final asyncGameData = ref.watch(gameDataProvider(widget.gameId));
+    return asyncGameData.when(
+      data: (gameDataOrNull) {
+        if (gameDataOrNull == null) {
+          print("❌ Game data from provider is null after loading.");
+          return const Center(
+              child:
+                  CircularProgressIndicator(key: Key("gameDataNullIndicator")));
+        }
+        // Successfully got data
+        final Map<String, dynamic> gameData = gameDataOrNull;
+        this.currentPlayerTurn = gameData['currentPlayerTurn'] as String? ?? '';
+        // 1) turn flat JSON into Tile objects
+        final rawTiles = gameData['tiles'] as List<dynamic>?;
+        // print("rawTiles: $rawTiles");
+        final tilesJson = rawTiles ?? <dynamic>[];
+        this.allTiles =
+            tilesJson.cast<Map<String, dynamic>>().map(Tile.fromMap).toList();
 
-    final preRotatedText = Transform.rotate(
-      angle: -math.pi / 4,
-      child: Text(
-        'FLIP',
-        style: TextStyle(
-          color: Colors.black,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 1.2,
-        ),
-      ),
-    );
-    Color getBackgroundColor(Tile tile) {
-      switch (tile.tileId) {
-        case 'invalid':
-          return Colors.red;
-        case 'TBD':
-          return Colors.yellow;
-        case 'valid':
-          return const Color(0xFF4A148C);
-        default:
-          return const Color(0xFF4A148C); // Default color
-      }
-    }
-
-    return Focus(
-      autofocus: true,
-      onKey: (FocusNode node, RawKeyEvent event) {
-        if (event is RawKeyDownEvent) {
-          final key = event.logicalKey;
-          final isLetter = key.keyLabel.length == 1 &&
-              RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
-
-          if (isLetter && inputtedLetters.length < 16) {
-            _handleLetterTyped(key.keyLabel.toUpperCase());
-          } else if (key == LogicalKeyboardKey.backspace) {
-            _handleBackspace();
-          } else if (key == LogicalKeyboardKey.enter) {
-            if (inputtedLetters.isNotEmpty) {
-              print(
-                  "❤️ Submitting selected tiles: inputtedletters = ${inputtedLetters.map((tile) => {
-                        'letter': tile.letter,
-                        'tileId': tile.tileId
-                      }).toList()}");
-              _sendTileIds();
-            } else {
-              _flipNewTile();
-            }
-          } else if (key == LogicalKeyboardKey.escape) {
-            setState(() {
-              clearInput();
-            });
+        final rawWords = gameData['words'] as List<dynamic>?;
+        final wordsList =
+            (rawWords ?? <dynamic>[]).cast<Map<String, dynamic>>();
+        // 2) derive the counts
+        final tilesLeftCount = this
+            .allTiles
+            .where((t) => t.letter == null || t.letter!.isEmpty)
+            .length;
+        // 3) isolate the “middle” tiles
+        this.middleTiles =
+            this.allTiles.where((t) => t.location == 'middle').toList();
+        // 4) figure out whose turn it is
+        final currentPlayerTurn =
+            gameData['currentPlayerTurn'] as String? ?? '';
+        _updateTurnState(currentUserId == currentPlayerTurn);
+        // 5) build player → username map and color map
+        final playersData = gameData['players'] as Map<dynamic, dynamic>?;
+        final playersMap =
+            (playersData ?? <String, dynamic>{}).cast<String, dynamic>();
+        final playerIdToUsername = <String, String>{};
+        this.playerColorMap.clear(); // Clear previous values
+        var colorIdx = 0;
+        for (final entry in playersMap.entries) {
+          playerIdToUsername[entry.key] =
+              entry.value['username'] as String? ?? '';
+          this.playerColorMap[entry.key] =
+              playerColors[colorIdx++ % playerColors.length];
+        }
+        // Assign to class member 'playerIdToUsernameMap'
+        this.playerIdToUsernameMap = playerIdToUsername;
+        // 6) build & sort playerWords
+        this.playerWords = processPlayerWords(playersMap, wordsList);
+        final me = FirebaseAuth.instance.currentUser?.uid;
+        this.playerWords.sort((a, b) {
+          if (a['playerId'] == me) return 1;
+          if (b['playerId'] == me) return -1;
+          return 0;
+        });
+        var screenSize = MediaQuery.of(context).size;
+        final double tileSize = screenSize.width > 600 ? 40 : 25;
+        final preRotatedText = Transform.rotate(
+          angle: -math.pi / 4,
+          child: Text(
+            'FLIP',
+            style: TextStyle(
+              color: Colors.black,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 1.2,
+            ),
+          ),
+        );
+        Color getBackgroundColor(Tile tile) {
+          switch (tile.tileId) {
+            case 'invalid':
+              return Colors.red;
+            case 'TBD':
+              return Colors.yellow;
+            case 'valid':
+              return const Color(0xFF4A148C);
+            default:
+              return const Color(0xFF4A148C);
           }
         }
-        return KeyEventResult.handled;
-      },
-      child: Scaffold(
-        appBar: AppBar(
-          title: Text("Game ${widget.gameId}"),
-          actions: [
-            if (MediaQuery.of(context).size.width > 600)
-              IconButton(
-                icon: Icon(Icons.help_outline),
-                onPressed: () {
-                  showDialog(
-                    context: context,
-                    builder: (BuildContext context) {
-                      return AlertDialog(
-                        title: Text("Game Instructions"),
-                        content: RichText(
-                          text: TextSpan(
-                            style: DefaultTextStyle.of(context)
-                                .style
-                                .copyWith(fontSize: 20, color: Colors.white),
-                            children: [
-                              TextSpan(text: "Press "),
-                              _keyStyle("ESC"),
-                              TextSpan(text: " to deselect tiles\nPress "),
-                              _keyStyle("Enter"),
-                              TextSpan(text: " to submit tiles\nPress "),
-                              _keyStyle("Spacebar"),
-                              TextSpan(
-                                  text:
-                                      " to flip a tile\nClick a word to select all its tiles"),
-                            ],
-                          ),
-                        ),
-                        actions: [
-                          TextButton(
-                            child: Text("OK"),
-                            onPressed: () {
-                              Navigator.of(context).pop();
-                            },
-                          ),
-                        ],
-                      );
-                    },
-                  );
-                },
-              ),
-          ],
-        ),
-        body: gameData == null
-            ? const Center(child: CircularProgressIndicator())
-            : LayoutBuilder(builder: (context, constraints) {
-                return Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Player Words PlayerWords
-                      Expanded(
-                        child: ListView.builder(
-                          itemCount: playerWords.length,
-                          itemBuilder: (context, index) {
-                            final playerWordData = playerWords[index];
-                            final isCurrentPlayerTurn =
-                                playerWordData['playerId'] == currentPlayerTurn;
-                            final score = gameData?['players']
-                                    [playerWordData['playerId']]['score'] ??
-                                0;
-                            final maxScoreToWin =
-                                gameData!['max_score_to_win_per_player'] as int;
 
-                            return PlayerWords(
-                              username: playerWordData['username'],
-                              playerId: playerWordData['playerId'],
-                              words: playerWordData['words'],
-                              playerColors: playerColorMap,
-                              onClickTile: handleTileSelection,
-                              officiallySelectedTileIds:
-                                  officiallySelectedTileIds,
-                              potentiallySelectedTileIds:
-                                  potentiallySelectedTileIds,
-                              onClearSelection: () {},
-                              allTiles: allTiles,
-                              tileSize: tileSize,
-                              isCurrentPlayerTurn: isCurrentPlayerTurn,
-                              score: score,
-                              maxScoreToWin: maxScoreToWin,
-                            );
-                          },
-                        ),
-                      ),
+        return Focus(
+          autofocus: true,
+          onKey: (FocusNode node, RawKeyEvent event) {
+            if (event is RawKeyDownEvent) {
+              final key = event.logicalKey;
+              final isLetter = key.keyLabel.length == 1 &&
+                  RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
 
-                      const SizedBox(height: 10),
-
-                      // Tiles & Game Log Row
-                      Expanded(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              flex: 2,
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+              if (isLetter && inputtedLetters.length < 16) {
+                _handleLetterTyped(gameData, key.keyLabel.toUpperCase());
+              } else if (key == LogicalKeyboardKey.backspace) {
+                _handleBackspace();
+              } else if (key == LogicalKeyboardKey.enter) {
+                if (inputtedLetters.isNotEmpty) {
+                  print(
+                      "❤️ Submitting selected tiles: inputtedletters = ${inputtedLetters.map((tile) => {
+                            'letter': tile.letter,
+                            'tileId': tile.tileId
+                          }).toList()}");
+                  _sendTileIds(gameData);
+                } else {
+                  _flipNewTile();
+                }
+              } else if (key == LogicalKeyboardKey.escape) {
+                setState(() {
+                  clearInput();
+                });
+              }
+            }
+            return KeyEventResult.handled;
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              title: Text("Game ${widget.gameId}"),
+              actions: [
+                if (MediaQuery.of(context).size.width > 600)
+                  IconButton(
+                    icon: Icon(Icons.help_outline),
+                    onPressed: () {
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return AlertDialog(
+                            title: Text("Game Instructions"),
+                            content: RichText(
+                              text: TextSpan(
+                                style: DefaultTextStyle.of(context)
+                                    .style
+                                    .copyWith(
+                                        fontSize: 20, color: Colors.white),
                                 children: [
-                                  Text(
-                                    gameData?['tiles'] != null
-                                        ? 'Tiles ($tilesLeftCount Left):'
-                                        : '',
-                                    style: const TextStyle(
-                                      fontSize: 16,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 5),
-                                  middleTiles.isEmpty
-                                      ? Expanded(
-                                          child: Text(
-                                            "Flip a tile to begin – it's ${playerIdToUsernameMap[currentPlayerTurn]}'s turn to flip a tile!",
-                                            style: TextStyle(
-                                                fontSize: 16,
-                                                color: Colors.white),
-                                          ),
-                                        )
-                                      :
-
-                                      // Tile Grid
-                                      Expanded(
-                                          child: GridView.builder(
-                                            gridDelegate:
-                                                SliverGridDelegateWithFixedCrossAxisCount(
-                                              crossAxisCount:
-                                                  constraints.maxWidth > 600
-                                                      ? 12
-                                                      : 8,
-                                              childAspectRatio: 1.0,
-                                              crossAxisSpacing: 1.0,
-                                              mainAxisSpacing: 1.0,
-                                            ),
-                                            itemCount: middleTiles.length,
-                                            itemBuilder: (context, index) {
-                                              if (index >= middleTiles.length) {
-                                                return Center(
-                                                  child: Text(
-                                                    "Flip a tile to begin – ${currentPlayerTurn}'s needs to flip a tile!",
-                                                    style: TextStyle(
-                                                        fontSize: 16,
-                                                        color: Colors.white),
-                                                  ),
-                                                );
-                                              }
-                                              final tile = middleTiles[index];
-                                              final isSelected =
-                                                  officiallySelectedTileIds
-                                                      .contains(tile.tileId
-                                                          .toString());
-                                              final isHighlighted =
-                                                  potentiallySelectedTileIds
-                                                      .contains(tile.tileId);
-                                              return Padding(
-                                                padding:
-                                                    const EdgeInsets.symmetric(
-                                                        horizontal: 1.0),
-                                                child: TileWidget(
-                                                  tile: tile,
-                                                  tileSize: tileSize,
-                                                  onClickTile:
-                                                      (tile, isSelected) {
-                                                    setState(() {
-                                                      handleTileSelection(
-                                                          tile, isSelected);
-                                                    });
-                                                  },
-                                                  isSelected: isSelected,
-                                                  backgroundColor: isSelected
-                                                      ? Color(0xFF4A148C)
-                                                      : isHighlighted
-                                                          ? Colors.purple
-                                                              .withOpacity(0.25)
-                                                          : Colors.purple,
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        ),
+                                  TextSpan(text: "Press "),
+                                  _keyStyle("ESC"),
+                                  TextSpan(text: " to deselect tiles\nPress "),
+                                  _keyStyle("Enter"),
+                                  TextSpan(text: " to submit tiles\nPress "),
+                                  _keyStyle("Spacebar"),
+                                  TextSpan(
+                                      text:
+                                          " to flip a tile\nClick a word to select all its tiles"),
                                 ],
                               ),
                             ),
-
-                            // Game Log (Only on larger screens)
-                            if (constraints.maxWidth > 600)
-                              const SizedBox(width: 10),
-                            if (constraints.maxWidth > 600)
-                              Expanded(
-                                flex: 1,
-                                child: GameLog(
-                                    gameId: widget.gameId,
-                                    gameData: gameData!,
-                                    playerIdToUsernameMap:
-                                        playerIdToUsernameMap,
-                                    tileSize: tileSize),
+                            actions: [
+                              TextButton(
+                                child: Text("OK"),
+                                onPressed: () {
+                                  Navigator.of(context).pop();
+                                },
                               ),
-                          ],
+                            ],
+                          );
+                        },
+                      );
+                    },
+                  ),
+              ],
+            ),
+            body: LayoutBuilder(builder: (context, constraints) {
+              return Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Player Words
+                    Expanded(
+                      child: ListView.builder(
+                        itemCount: this.playerWords.length,
+                        itemBuilder: (context, index) {
+                          final playerWordData = this.playerWords[index];
+                          final isCurrentPlayerTurn =
+                              playerWordData['playerId'] ==
+                                  this.currentPlayerTurn;
+                          final score = gameData['players']
+                                  [playerWordData['playerId']]['score'] ??
+                              0;
+                          final maxScoreToWin =
+                              gameData['max_score_to_win_per_player'] as int;
+
+                          return PlayerWords(
+                            username: playerWordData['username'],
+                            playerId: playerWordData['playerId'],
+                            words: playerWordData['words'],
+                            playerColors: this.playerColorMap,
+                            onClickTile: handleTileSelection,
+                            officiallySelectedTileIds:
+                                officiallySelectedTileIds,
+                            potentiallySelectedTileIds:
+                                potentiallySelectedTileIds,
+                            onClearSelection: () {},
+                            allTiles: this.allTiles,
+                            tileSize: tileSize,
+                            isCurrentPlayerTurn: isCurrentPlayerTurn,
+                            score: score,
+                            maxScoreToWin: maxScoreToWin,
+                          );
+                        },
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    // Tiles & Game Log Row
+                    Expanded(
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            flex: 2,
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Tiles ($tilesLeftCount Left):',
+                                  style: const TextStyle(
+                                    fontSize: 16,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(height: 5),
+                                this.middleTiles.isEmpty
+                                    ? Expanded(
+                                        child: Text(
+                                          "Flip a tile to begin – it's ${this.playerIdToUsernameMap[this.currentPlayerTurn]}'s turn to flip a tile!",
+                                          style: TextStyle(
+                                              fontSize: 16,
+                                              color: Colors.white),
+                                        ),
+                                      )
+                                    : Expanded(
+                                        child: GridView.builder(
+                                          gridDelegate:
+                                              SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount:
+                                                constraints.maxWidth > 600
+                                                    ? 12
+                                                    : 8,
+                                            childAspectRatio: 1.0,
+                                            crossAxisSpacing: 1.0,
+                                            mainAxisSpacing: 1.0,
+                                          ),
+                                          itemCount: this.middleTiles.length,
+                                          itemBuilder: (context, index) {
+                                            if (index >=
+                                                this.middleTiles.length) {
+                                              return SizedBox.shrink();
+                                            }
+                                            final tile =
+                                                this.middleTiles[index];
+                                            final isSelected =
+                                                officiallySelectedTileIds
+                                                    .contains(
+                                                        tile.tileId.toString());
+                                            final isHighlighted =
+                                                potentiallySelectedTileIds
+                                                    .contains(
+                                                        tile.tileId.toString());
+                                            return Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                      horizontal: 1.0),
+                                              child: TileWidget(
+                                                tile: tile,
+                                                tileSize: tileSize,
+                                                onClickTile:
+                                                    (tile, isSelected) {
+                                                  setState(() {
+                                                    handleTileSelection(
+                                                        tile, isSelected);
+                                                  });
+                                                },
+                                                isSelected: isSelected,
+                                                backgroundColor: isSelected
+                                                    ? Color(0xFF4A148C)
+                                                    : isHighlighted
+                                                        ? Colors.purple
+                                                            .withOpacity(0.25)
+                                                        : Colors.purple,
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      ),
+                              ],
+                            ),
+                          ),
+                          if (constraints.maxWidth > 600)
+                            const SizedBox(width: 10),
+                          if (constraints.maxWidth > 600)
+                            Expanded(
+                              flex: 1,
+                              child: GameLog(
+                                  gameId: widget.gameId,
+                                  gameData: gameData,
+                                  playerIdToUsernameMap:
+                                      this.playerIdToUsernameMap,
+                                  tileSize: tileSize),
+                            ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      "Selected Tiles:",
+                      style: const TextStyle(fontSize: 16, color: Colors.white),
+                    ),
+                    Wrap(
+                      spacing: 4.0,
+                      children: inputtedLetters.map((tile) {
+                        return SelectedLetterTile(
+                          tile: tile,
+                          tileSize: tileSize,
+                          backgroundColor: getBackgroundColor(tile),
+                          onRemove: () {
+                            setState(() {
+                              _handleBackspace();
+                            });
+                          },
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            floatingActionButton: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                FloatingActionButton(
+                  onPressed: () {
+                    setState(() {
+                      inputtedLetters.clear();
+
+                      usedTileIds.clear();
+                      potentiallySelectedTileIds.clear();
+                      officiallySelectedTileIds.clear();
+                    });
+                  },
+                  child: const Icon(Icons.clear),
+                  backgroundColor: Colors.red,
+                  heroTag: 'clear',
+                ),
+                const SizedBox(width: 10),
+                FloatingActionButton(
+                  onPressed: (inputtedLetters.length >= 3)
+                      ? () => _sendTileIds(gameData)
+                      : null,
+                  child: const Icon(Icons.send_rounded),
+                  backgroundColor:
+                      (inputtedLetters.length >= 3) ? null : Colors.grey,
+                  heroTag: 'send',
+                ),
+                const SizedBox(width: 10),
+                AnimatedBuilder(
+                  animation: _flipAnimation,
+                  child: preRotatedText,
+                  builder: (context, animatedChild) {
+                    final animationValue = _flipAnimation.value;
+                    final angle = -animationValue * math.pi;
+                    final isBack = angle.abs() > (math.pi / 2);
+
+                    final axis = vmat.Vector3(1, -1, 0).normalized();
+
+                    final transformMatrix = Matrix4.identity()
+                      ..setEntry(3, 2, 0.001)
+                      ..rotate(axis, angle);
+
+                    final Matrix4 unmirrorTransform;
+                    if (isBack) {
+                      unmirrorTransform = Matrix4.identity()
+                        ..rotate(axis, math.pi);
+                    } else {
+                      unmirrorTransform = Matrix4.identity();
+                    }
+
+                    Color borderColor = const Color.fromARGB(255, 255, 0, 251);
+                    double borderWidth = 5.0;
+
+                    if (isCurrentUsersTurn && _blinkController.isAnimating) {
+                      borderColor =
+                          borderColor.withOpacity(_blinkOpacityAnimation.value);
+                    } else if (isCurrentUsersTurn &&
+                        !_blinkController.isAnimating) {
+                      borderColor = const Color.fromARGB(255, 255, 0, 251);
+                    }
+
+                    return Transform(
+                      alignment: Alignment.center,
+                      transform: transformMatrix,
+                      child: FloatingActionButton(
+                        onPressed: isCurrentUsersTurn && !isFlipping
+                            ? () {
+                                _flipController.forward(from: 0);
+                                _flipNewTile();
+                              }
+                            : null,
+                        backgroundColor: isCurrentUsersTurn
+                            ? Colors.yellow
+                            : Colors.grey.shade400,
+                        foregroundColor: Colors.black,
+                        heroTag: 'flip',
+                        shape: isCurrentUsersTurn
+                            ? RoundedRectangleBorder(
+                                side: BorderSide(
+                                  color: borderColor,
+                                  width: borderWidth,
+                                ),
+                                borderRadius: BorderRadius.circular(16.0),
+                              )
+                            : RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(16.0),
+                              ),
+                        child: Transform(
+                          alignment: Alignment.center,
+                          transform: unmirrorTransform,
+                          child: animatedChild,
                         ),
                       ),
-
-                      // Selected Tiles
-                      const SizedBox(height: 10),
-                      Text(
-                        "Selected Tiles:",
-                        style:
-                            const TextStyle(fontSize: 16, color: Colors.white),
-                      ),
-                      Wrap(
-                        spacing: 4.0,
-                        children: inputtedLetters.map((tile) {
-                          return SelectedLetterTile(
-                            tile: tile,
-                            tileSize: tileSize,
-                            backgroundColor: getBackgroundColor(tile),
-                            onRemove: () {
-                              setState(() {
-                                _handleBackspace();
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                  ),
-                );
-              }),
-        floatingActionButton: Row(
-          mainAxisAlignment: MainAxisAlignment.end,
-          children: [
-            FloatingActionButton(
-              onPressed: () {
-                setState(() {
-                  inputtedLetters.clear();
-
-                  usedTileIds.clear();
-                  potentiallySelectedTileIds.clear();
-                  officiallySelectedTileIds.clear();
-                });
-              },
-              child: const Icon(Icons.clear),
-              backgroundColor: Colors.red,
-              heroTag: 'clear',
+                    );
+                  },
+                )
+              ],
             ),
-            const SizedBox(width: 10),
-            FloatingActionButton(
-              onPressed:
-                  inputtedLetters.isNotEmpty || inputtedLetters.length < 3
-                      ? _sendTileIds
-                      : null,
-              child: const Icon(Icons.send_rounded),
-              backgroundColor:
-                  inputtedLetters.isNotEmpty || inputtedLetters.length < 3
-                      ? null
-                      : Colors.grey,
-              heroTag: 'send',
-            ),
-            const SizedBox(width: 10),
-            AnimatedBuilder(
-              animation: _flipAnimation,
-              child: preRotatedText,
-              builder: (context, animatedChild) {
-                final animationValue = _flipAnimation.value;
-                final angle =
-                    -animationValue * math.pi; // Flips from 0 to -180 degrees
-                final isBack = angle.abs() > (math.pi / 2);
+          ),
+        );
+      },
+      loading: () {
+        print("🔄 Game data is loading...");
 
-                final axis = vmat.Vector3(1, -1, 0).normalized();
+        return const Center(
+            child: CircularProgressIndicator(key: Key("loadingIndicator")));
+      },
+      error: (error, stackTrace) {
+        print("🔥 Error loading game data: $error\n$stackTrace");
 
-                final transformMatrix = Matrix4.identity()
-                  ..setEntry(3, 2, 0.001) // Perspective
-                  ..rotate(axis, angle); // Main rotation for the flip
-
-                final Matrix4 unmirrorTransform;
-                if (isBack) {
-                  // Counter-rotate the child to appear correctly from the "back"
-                  unmirrorTransform = Matrix4.identity()..rotate(axis, math.pi);
-                } else {
-                  unmirrorTransform = Matrix4.identity();
-                }
-
-                Color borderColor =
-                     const Color.fromARGB(255, 255, 0, 251); // Default active border color
-                double borderWidth = 5.0;
-
-                if (isCurrentUsersTurn && _blinkController.isAnimating) {
-                  borderColor =
-                      borderColor.withOpacity(_blinkOpacityAnimation.value);
-                } else if (isCurrentUsersTurn &&
-                    !_blinkController.isAnimating) {
-                  borderColor = const Color.fromARGB(255, 255, 0, 251);
-                }
-
-                return Transform(
-                  alignment: Alignment.center,
-                  transform: transformMatrix,
-                  child: FloatingActionButton(
-                    onPressed: isCurrentUsersTurn && !isFlipping
-                        ? () {
-                            _flipController.forward(from: 0);
-                            _flipNewTile();
-                          }
-                        : null,
-                    backgroundColor: isCurrentUsersTurn
-                        ? Colors.yellow
-                        : Colors.grey.shade400,
-                    foregroundColor: Colors.black,
-                    heroTag: 'flip',
-                    shape: isCurrentUsersTurn
-                        ? RoundedRectangleBorder(
-                            side: BorderSide(
-                              color: borderColor,
-                              width: borderWidth,
-                            ),
-                            borderRadius: BorderRadius.circular(16.0),
-                          )
-                        : RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(16.0),
-                          ),
-                    child: Transform(
-                      alignment: Alignment.center,
-                      transform: unmirrorTransform,
-                      child: animatedChild,
-                    ),
-                  ),
-                );
-              },
-            )
-          ],
-        ),
-      ),
+        return Center(child: Text('Error loading game: $error'));
+      },
     );
   }
 }
