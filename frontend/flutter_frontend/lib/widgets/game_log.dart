@@ -44,15 +44,36 @@ class _GameLogState extends State<GameLog> {
 
       List<Map<String, dynamic>> newLogs = data.entries.map((entry) {
         final logData = entry.value as Map<dynamic, dynamic>;
-        return {
+        final String actionType = logData['type'] as String? ?? "Unknown Type";
+
+        Map<String, dynamic> logEntry = {
           'playerId': logData['playerId'] ?? "Unknown Player",
-          'word': logData['word'] ?? "",
-          'type': logData['type'] ?? "Unknown Type",
+          'type': actionType,
           'timestamp': logData['timestamp'] ?? 0,
-          'tileLetter': logData['tileLetter'],
-          'tileId': logData['tileId'],
-          'robbedUserId': logData['robbedUserId'] ?? '',
         };
+
+        if (actionType == 'flip_tile') {
+          logEntry['tileLetter'] = logData['tileLetter'] ?? '';
+          logEntry['tileId'] = logData['tileId'] ?? '';
+        }
+        if (actionType == 'MIDDLE_WORD' ||
+            actionType == 'INVALID_LENGTH' ||
+            actionType == 'INVALID_NO_MIDDLE' ||
+            actionType == 'INVALID_LETTERS_USED' ||
+            actionType == 'INVALID_WORD_NOT_IN_DICTIONARY' ||
+            actionType == 'INVALID_UNKNOWN_WHY') {
+          logEntry['word'] = logData['word'] ?? '';
+        }
+        if (actionType == 'STEAL_WORD') {
+          logEntry['word'] = logData['word'] ?? '';
+          logEntry['robbedUserId'] = logData['robbedUserId'] ?? '';
+          logEntry['stolenWord'] = logData['stolenWord'] ?? '';
+        }
+        if (actionType == 'OWN_WORD_IMPROVEMENT') {
+          logEntry['word'] = logData['word'] ?? '';
+          logEntry['originalWord'] = logData['originalWord'] ?? '';
+        }
+        return logEntry;
       }).toList();
 
       newLogs.sort(
@@ -101,7 +122,9 @@ class _GameLogState extends State<GameLog> {
 
   Widget _buildLogMessage(Map<String, dynamic> log) {
     final username = widget.playerIdToUsernameMap[log['playerId']] ?? 'bing';
+    print("👀 Log: $log");
     final String message = _getLogMessage(log, username);
+    print("👀 Message: $message");
     final Color textColor = _getTextColor(log['type']);
     final Color tileBackgroundColor = _getTileColor(log['type']);
     final List<Widget> tileWidgets =
@@ -172,12 +195,16 @@ class _GameLogState extends State<GameLog> {
       case 'flip_tile':
         return "$username flipped:";
       case 'MIDDLE_WORD':
+        return "$username created a word from the middle:";
       case 'OWN_WORD_IMPROVEMENT':
-        return "$username submitted:";
+        final originalWord = log['originalWord'] as String?;
+        return "$username improved their word $originalWord:";
       case 'STEAL_WORD':
+        print("⭐️ Steal word log: $log");
         final robbedId = log['robbedUserId'] as String;
         final robbedName = widget.playerIdToUsernameMap[robbedId] ?? robbedId;
-        return "$username stole from $robbedName!";
+        final stolenWord = log['stolenWord'] as String?;
+        return "$username stole $stolenWord from $robbedName!";
       case 'INVALID_LENGTH':
         return "$username submitted a word without enough letters:";
       case 'INVALID_NO_MIDDLE':

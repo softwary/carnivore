@@ -79,10 +79,10 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
 
         if not current_data:
             raise GameNotFoundError(f"Game with ID {game_id} not found.")
-        
-        # Check for winner by seeing if this submitting player has max score they need
-        max_score_to_win_per_player = current_data.get('max_score_to_win_per_player')
 
+        # Check for winner by seeing if this submitting player has max score they need
+        max_score_to_win_per_player = current_data.get(
+            'max_score_to_win_per_player')
 
         # ✅ Step 1: Identify Submission Type INSIDE the Transaction
         submission_type, extra_data = identifyWordSubmissionType(
@@ -257,7 +257,7 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 logger.error(
                     f"[submit_word] Player ID {user_id} not found in current data.")
                 return None
-        # 87. Advance Turn if the word is valid
+        # 7. Advance Turn if the word is valid
         if not winner_found and submission_type in (
             WordSubmissionType.MIDDLE_WORD,
             WordSubmissionType.OWN_WORD_IMPROVEMENT,
@@ -277,9 +277,17 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
             'word': word,
             'tileIds': tile_ids
         }
-        # include robbed_user_id if applicable
-        if robbed_user_id:
+        print("👀 action..should just have the above fields... = ", action)
+        if submission_type == WordSubmissionType.STEAL_WORD:
             action['robbedUserId'] = robbed_user_id
+            action['stolenWord'] = stolen_word['word']
+            print("👀👀👀 STEAL_WORD action...word that was stolen=",
+                  action['stolenWord'])
+            print(
+                "👀👀👀 STEAL_WORD action... should have robbedUserId, stolenWord ", action)
+        elif submission_type == WordSubmissionType.OWN_WORD_IMPROVEMENT:
+            action['originalWord'] = old_word['word']
+            print("👀👀👀 OWN_WORD_IMPROVEMENT action... should have originlWord ", action)
 
         add_game_action(current_data, game_id, action)
         logger.debug(
@@ -344,25 +352,25 @@ def identifyWordSubmissionType(game_data, user_id, tile_ids):
 
     if not word_validation_service.is_valid_word_length(tiles):
         logger.debug(
-            f"[game_service.py][identifyWordSubmissionType] Invalid word length")
+            "[game_service.py][identifyWordSubmissionType] Invalid word length")
         return WordSubmissionType.INVALID_LENGTH, []
     if len(middle_tiles_used_in_word) == 0:
         logger.debug(
-            f"[game_service.py][identifyWordSubmissionType] No middle tiles used")
+            "[game_service.py][identifyWordSubmissionType] No middle tiles used")
         return WordSubmissionType.INVALID_NO_MIDDLE, []
     if not word_validation_service.uses_valid_letters(game_data, tiles):
         logger.debug(f"Checking if valid letters were used...")
         logger.debug(
-            f"[game_service.py][identifyWordSubmissionType] Invalid letters used")
+            "[game_service.py][identifyWordSubmissionType] Invalid letters used")
         return WordSubmissionType.INVALID_LETTERS_USED, []
     if not word_validation_service.is_valid_word(tiles, game_data.get("gameId")):
         logger.debug(
-            f"[game_service.py][identifyWordSubmissionType] Word not in dictionary")
+            "[game_service.py][identifyWordSubmissionType] Word not in dictionary")
         return WordSubmissionType.INVALID_WORD_NOT_IN_DICTIONARY, []
 
     if len(tiles) == len(middle_tiles_used_in_word):
         logger.debug(
-            f"[game_service.py][identifyWordSubmissionType] Middle word")
+            "[game_service.py][identifyWordSubmissionType] Middle word")
         return WordSubmissionType.MIDDLE_WORD, []
 
     potential_words_to_steal_from = []
@@ -393,7 +401,7 @@ def identifyWordSubmissionType(game_data, user_id, tile_ids):
         return WordSubmissionType.STEAL_WORD, potential_words_to_steal_from
 
     logger.debug(
-        f"[game_service.py][identifyWordSubmissionType] Returning Invalid Unknown Why")
+        "[game_service.py][identifyWordSubmissionType] Returning Invalid Unknown Why")
     return WordSubmissionType.INVALID_UNKNOWN_WHY, []
 
 
