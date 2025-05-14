@@ -62,7 +62,6 @@ def verify_firebase_token(f):
             Exception: For any other unexpected errors.
         """
         token = request.headers.get('Authorization')
-        logger.debug(f"verify_firebase_token() --> token= {token[:10]}")
         if not token:
             logger.warning("verify_firebase_token() --> Authorization token is missing")
             return jsonify({'error': 'Authorization token is required'}), 401
@@ -76,7 +75,6 @@ def verify_firebase_token(f):
             )
 
             user_id = idinfo['sub']
-            logger.debug(f"verify_firebase_token() --> user_id= {user_id}")
             request.user_id = user_id
 
         except ValueError as e:
