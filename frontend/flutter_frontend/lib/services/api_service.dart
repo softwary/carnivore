@@ -7,7 +7,7 @@ import 'package:flutter_frontend/classes/tile.dart';
 
 class ApiService {
   Future<void> joinGameApi(BuildContext context, String gameId, String token,
-      {required String username}) async {
+      {required String username, required Function onGameNotFound}) async {
     if (gameId.isEmpty) return;
     final url = Uri.parse('${Config.backendUrl}/join-game');
     print("in joinGameApi, username = $username");
@@ -38,9 +38,28 @@ class ApiService {
         );
       } else {
         print("Error: ${response.statusCode} - ${response.body}");
+
+        // Check if the error is about game not found (could be 404 or a specific error message)
+        if (response.statusCode == 404 ||
+            response.body.contains("not found") ||
+            response.body.contains("doesn't exist")) {
+          onGameNotFound();
+        } else {
+          // Show a generic error for other issues
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Error joining game: ${response.reasonPhrase}'),
+            ),
+          );
+        }
       }
     } catch (e) {
       print("failed to fetch data: $e");
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Connection error: $e'),
+        ),
+      );
     }
   }
 
@@ -107,12 +126,12 @@ class ApiService {
     }
   }
 
-  Future<http.Response> sendTileIds(String gameId, String token,
-    List<Tile> selectedTiles) async {
+  Future<http.Response> sendTileIds(
+      String gameId, String token, List<Tile> selectedTiles) async {
     final url = Uri.parse('${Config.backendUrl}/submit-word');
     // Convert tileIds to integers
-    final List<int> tileIdsAsIntegers = selectedTiles
-      .map((tile) => tile.tileId).cast<int>().toList();
+    final List<int> tileIdsAsIntegers =
+        selectedTiles.map((tile) => tile.tileId).cast<int>().toList();
 
     final Map<String, dynamic> payload = {
       'game_id': gameId,

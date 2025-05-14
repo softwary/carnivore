@@ -16,10 +16,10 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _gameIdController =
-      TextEditingController(text: '');
+      TextEditingController(text: '3051');
   final FocusNode _focusNode = FocusNode();
   final TextEditingController _usernameController =
-      TextEditingController(text: '');
+      TextEditingController(text: 'kim2');
   final AuthService _authService = AuthService();
   final ApiService _apiService = ApiService();
   String? token;
@@ -217,6 +217,14 @@ The game ends when there are no more tiles left, and the player with the most ti
                             value.trim(),
                             token!,
                             username: _usernameController.text,
+                            onGameNotFound: () {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                const SnackBar(
+                                  content: Text(
+                                      'Game not found. Please check the game ID and try again.'),
+                                ),
+                              );
+                            },
                           );
                         } else {
                           ScaffoldMessenger.of(context).showSnackBar(
@@ -250,6 +258,14 @@ The game ends when there are no more tiles left, and the player with the most ti
                           _gameIdController.text,
                           token!,
                           username: _usernameController.text.trim(),
+                          onGameNotFound: () {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Game not found. Please check the game ID and try again.'),
+                              ),
+                            );
+                          },
                         );
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
