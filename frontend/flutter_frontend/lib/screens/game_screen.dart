@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,6 +29,15 @@ class GameScreen extends ConsumerStatefulWidget {
 
 class GameScreenState extends ConsumerState<GameScreen>
     with TickerProviderStateMixin {
+  Map<String, dynamic>? _previousGameData;
+  final Map<String, GlobalKey> _tileGlobalKeys = {};
+  final Map<String, Offset> _previousTileGlobalPositions = {};
+  final Map<String, Size> _previousTileSizes = {};
+  
+  Set<String> _sourceWordIdsForAnimation = {};
+  Set<String> _destinationWordIdsForAnimation = {};
+  final Set<String> _animatingWordIds = {};
+
   final ApiService _apiService = ApiService();
   String? currentUserId;
 
@@ -145,21 +156,451 @@ class GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
-  List<Map<String, dynamic>> processPlayerWords(
-      Map<String, dynamic> players, List<Map<String, dynamic>> words) {
-    List<Map<String, dynamic>> playerWords = [];
-    players.forEach((playerId, playerData) {
-      List<Map<String, dynamic>> playerWordList =
-          words.where((word) => word['user_id'] == playerId).toList();
-      if (playerWordList.isNotEmpty) {
-        playerWords.add({
-          'playerId': playerId,
-          'username': playerData['username'], // Add username here
-          'words': playerWordList,
+  void _startStealAnimation({
+    required String? originalWordId,
+    required String newWordId,
+    required List<String> tileIds,
+    required String fromPlayerId,
+    required String toPlayerId,
+    Map<String, Offset>? overrideStartPositions,
+    Map<String, Size>? overrideStartSizes,
+  }) async {
+    print(
+        "🚀 Starting steal animation for word $newWordId with ${tileIds.length} tiles");
+
+    if (!mounted) return;
+    if (_animatingWordIds.contains(newWordId)) {
+      print("Animation for $newWordId already in progress");
+      return;
+    }
+
+    _animatingWordIds.add(newWordId);
+
+    // Controllers & entries to track for cleanup
+    List<AnimationController> controllers = [];
+    List<OverlayEntry> entries = [];
+    List<Timer> delayTimers = [];
+    bool isAnimationCancelled = false;
+
+    // Capture scroll position at animation start
+    List<ScrollPosition> trackingScrollPositions = [];
+    List<Offset> initialScrollOffsets = [];
+
+    // Find all scroll positions that might affect our tiles
+    void captureScrollPositions() {
+      trackingScrollPositions.clear();
+      initialScrollOffsets.clear();
+
+      // Find scrollable ancestors that could affect our tiles
+      ScrollableState? findScrollableAncestor(BuildContext? context) {
+        if (context == null) return null;
+        return Scrollable.of(context);
+      }
+
+      // Check both "from" and "to" contexts for scrollables
+      for (var tileId in tileIds) {
+        // Check source
+        final sourceKey = _tileGlobalKeys[tileId];
+        if (sourceKey?.currentContext != null) {
+          final scrollable = findScrollableAncestor(sourceKey!.currentContext);
+          if (scrollable != null &&
+              !trackingScrollPositions.contains(scrollable.position)) {
+            trackingScrollPositions.add(scrollable.position);
+            initialScrollOffsets.add(Offset(
+                scrollable.position.pixels,
+                scrollable.axisDirection == AxisDirection.down ||
+                        scrollable.axisDirection == AxisDirection.up
+                    ? scrollable.position.pixels
+                    : 0.0));
+          }
+        }
+
+        // Check destination
+        final destKey = _tileGlobalKeys[tileId];
+        if (destKey?.currentContext != null) {
+          final scrollable = findScrollableAncestor(destKey!.currentContext);
+          if (scrollable != null &&
+              !trackingScrollPositions.contains(scrollable.position)) {
+            trackingScrollPositions.add(scrollable.position);
+            initialScrollOffsets.add(Offset(
+                scrollable.position.pixels,
+                scrollable.axisDirection == AxisDirection.down ||
+                        scrollable.axisDirection == AxisDirection.up
+                    ? scrollable.position.pixels
+                    : 0.0));
+          }
+        }
+      }
+
+      print(
+          "🔍 Tracking ${trackingScrollPositions.length} scroll positions for animation");
+    }
+
+    // Calculates scroll delta from when animation started
+    Offset getScrollDelta(int index) {
+      if (index >= trackingScrollPositions.length) return Offset.zero;
+
+      final scrollPosition = trackingScrollPositions[index];
+      final initialOffset = index < initialScrollOffsets.length
+          ? initialScrollOffsets[index]
+          : Offset.zero;
+
+      final double dx = scrollPosition.axis == Axis.horizontal
+          ? scrollPosition.pixels - initialOffset.dx
+          : 0.0;
+
+      final double dy = scrollPosition.axis == Axis.vertical
+          ? scrollPosition.pixels - initialOffset.dy
+          : 0.0;
+
+      return Offset(dx, dy);
+    }
+
+    // Make sure we have the latest positions captured
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) {
+      _animatingWordIds.remove(newWordId);
+      return;
+    }
+
+    captureScrollPositions();
+
+    final overlay = Overlay.of(context);
+    if (overlay == null) {
+      _animatingWordIds.remove(newWordId);
+      return;
+    }
+
+    final overlayContext = overlay.context;
+    final overlayRenderObject = overlayContext.findRenderObject();
+    if (overlayRenderObject == null) {
+      print("Error: Overlay RenderObject is null");
+      _animatingWordIds.remove(newWordId);
+      return;
+    }
+
+    void cleanupAnimations() {
+      if (isAnimationCancelled) return;
+      isAnimationCancelled = true;
+
+      for (var timer in delayTimers) {
+        timer.cancel();
+      }
+
+      for (var entry in entries) {
+        try {
+          if (entry.mounted) entry.remove();
+        } catch (e) {
+          print("Error removing overlay entry: $e");
+        }
+      }
+
+      for (var controller in controllers) {
+        try {
+          if (controller.isAnimating) controller.stop();
+          controller.dispose();
+        } catch (e) {
+          print("Error disposing controller: $e");
+        }
+      }
+
+      _animatingWordIds.remove(newWordId);
+
+      // After animation completes, update state to show words normally
+      setState(() {
+        _destinationWordIdsForAnimation.remove(newWordId);
+        if (originalWordId != null) _sourceWordIdsForAnimation.remove(originalWordId);
+      });
+
+      print("✅ Animation completed for word $newWordId");
+    }
+
+    for (int i = 0; i < tileIds.length; i++) {
+      final tileId = tileIds[i];
+
+      // Find the tile in allTiles
+      final tileData = allTiles.firstWhere((t) => t.tileId.toString() == tileId,
+          orElse: () => Tile(letter: '', tileId: '', location: ''));
+
+      if (tileData.tileId == '') {
+        print("Tile data not found for $tileId");
+        continue;
+      }
+
+      // Get start position
+      Offset? startPosition;
+      Size? startSize;
+
+      // Prioritize overrideStartPositions if available for this specific tile.
+      // This covers tiles explicitly captured as "newly added from middle" during _checkForWordTransformations
+      // or tiles from a 'MIDDLE_WORD' action.
+      if (overrideStartPositions != null && overrideStartPositions.containsKey(tileId)) {
+        startPosition = overrideStartPositions[tileId];
+        startSize = (overrideStartSizes != null) ? overrideStartSizes[tileId] : null;
+        if (startPosition != null && currentUserId == toPlayerId) { // Log for local player if override is used
+          // print("🚀 LOCAL ANIM ($newWordId): Using OVERRIDE start pos for tile $tileId: $startPosition");
+        }
+      }
+      
+      // Fallback to previously captured metrics if override was not available or didn't provide a complete set of metrics.
+      if (startPosition == null || startSize == null) { // Check if either is null to ensure we try the fallback
+          startPosition ??= _previousTileGlobalPositions[tileId];
+          startSize ??= _previousTileSizes[tileId];
+          // if (startPosition != null && currentUserId == toPlayerId) print("🚀 LOCAL ANIM ($newWordId): Using PREVIOUS start pos for tile $tileId: $startPosition");
+      }
+
+      if (startPosition == null || startSize == null) {
+        print("⚠️ Missing start metrics for tile $tileId (Letter: ${tileData.letter}, FromPlayer: $fromPlayerId, ToPlayer: $toPlayerId, OriginalWord: $originalWordId, NewWord: $newWordId). Animation for this tile will be skipped.");
+        continue;
+      }
+
+      // Get the end position (destination tile)
+      final endKey = _tileGlobalKeys[tileId];
+      if (endKey == null || endKey.currentContext == null) {
+        print("Missing end key/context for tile $tileId");
+        continue;
+      }
+
+      // Growth controller
+      final growController = AnimationController(
+        duration: const Duration(milliseconds: 500),
+        vsync: this,
+      );
+      controllers.add(growController);
+
+      // Growth animation
+      final growAnimation = TweenSequence<double>([
+        TweenSequenceItem(
+            tween: Tween<double>(begin: 1.0, end: 1.5), weight: 50),
+        TweenSequenceItem(
+            tween: Tween<double>(begin: 1.5, end: 1.0), weight: 50),
+      ]).animate(
+          CurvedAnimation(parent: growController, curve: Curves.easeInOut));
+
+      // Movement controller
+      final moveController = AnimationController(
+        duration: const Duration(milliseconds: 600),
+        vsync: this,
+      );
+      controllers.add(moveController);
+
+      // Create the overlay that will track position changes
+      OverlayEntry overlayEntry = OverlayEntry(
+        builder: (context) {
+          // Get latest end position, accounting for scrolling
+          Offset getUpdatedEndPosition() {
+            if (endKey.currentContext == null ||
+                !mounted ||
+                isAnimationCancelled) {
+              return startPosition ?? Offset.zero; // Fall back to start position if we can't get end
+            }
+
+            final RenderBox? endBox =
+                endKey.currentContext!.findRenderObject() as RenderBox?;
+            if (endBox == null || !endBox.hasSize || !endBox.attached) {
+              return startPosition ?? Offset.zero;
+            }
+
+            try {
+              return endBox.localToGlobal(Offset.zero,
+                  ancestor: overlayRenderObject);
+            } catch (e) {
+              print("Error getting updated end position: $e");
+              return startPosition ?? Offset.zero;
+            }
+          }
+
+          // Adjust for scroll movement in original position
+          Offset adjustForScroll(Offset basePosition) {
+            Offset scrollAdjustment = Offset.zero;
+
+            // Combine all scroll changes
+            for (int i = 0; i < trackingScrollPositions.length; i++) {
+              final delta = getScrollDelta(i);
+              scrollAdjustment = Offset(scrollAdjustment.dx - delta.dx,
+                  scrollAdjustment.dy - delta.dy);
+            }
+
+            return Offset(basePosition.dx + scrollAdjustment.dx,
+                basePosition.dy + scrollAdjustment.dy);
+          }
+
+          // Current start and end positions, adjusted for scrolling
+          final adjustedStartPosition = adjustForScroll(startPosition ?? Offset.zero);
+          final currentEndPosition = getUpdatedEndPosition();
+
+          // Create movement animation based on current positions
+          final moveAnimation = Tween<Offset>(
+            begin: adjustedStartPosition,
+            end: currentEndPosition,
+          ).animate(CurvedAnimation(
+              parent: moveController, curve: Curves.easeInOutCubic));
+
+          return Stack(
+            children: [
+              // GROWTH PHASE - stays at start position, adjusts for scrolling
+              AnimatedBuilder(
+                animation: growAnimation,
+                builder: (context, child) {
+                  if (moveController.value > 0.0) return SizedBox.shrink();
+
+                  return Positioned(
+                    left: adjustForScroll(startPosition ?? Offset.zero).dx,
+                    top: adjustForScroll(startPosition ?? Offset.zero).dy,
+                    child: Transform.scale(
+                      scale: growAnimation.value,
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: TileWidget(
+                          tile: tileData,
+                          tileSize: startSize?.width ?? 0,
+                          onClickTile: (_, __) {},
+                          isSelected: false,
+                          backgroundColor:
+                              playerColorMap[fromPlayerId] ?? Colors.grey,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+
+              // MOVEMENT PHASE - dynamically updates with current positions
+              AnimatedBuilder(
+                animation: moveAnimation,
+                builder: (context, child) {
+                  if (moveController.value == 0.0) return SizedBox.shrink();
+
+                  final scale = 1.0 +
+                      (0.2 * (1 - (moveController.value - 0.5).abs() * 2));
+
+                  return Positioned(
+                    left: moveAnimation.value.dx,
+                    top: moveAnimation.value.dy,
+                    child: Transform.scale(
+                      scale: scale,
+                      child: Material(
+                        type: MaterialType.transparency,
+                        child: TileWidget(
+                          tile: tileData,
+                          tileSize: startSize?.width ?? 0,
+                          onClickTile: (_, __) {},
+                          isSelected: false,
+                          backgroundColor: Color.lerp(
+                                  playerColorMap[fromPlayerId] ?? Colors.grey,
+                                  playerColorMap[toPlayerId] ?? Colors.purple,
+                                  moveController.value) ??
+                              Colors.purple,
+                        ),
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ],
+          );
+        },
+      );
+
+      entries.add(overlayEntry);
+      overlay.insert(overlayEntry);
+
+      // Stagger animations with delay
+      final timer = Timer(Duration(milliseconds: i * 200), () {
+        if (isAnimationCancelled || !mounted) return;
+
+        growController.forward().then((_) {
+          if (isAnimationCancelled || !mounted) return;
+
+          moveController.forward().then((_) {
+            if (i == tileIds.length - 1) {
+              Timer(Duration(milliseconds: 200), () {
+                if (mounted) cleanupAnimations();
+              });
+            }
+          });
         });
+      });
+
+      delayTimers.add(timer);
+    }
+
+    // Safety cleanup
+    Timer(Duration(seconds: 5), () {
+      if (!isAnimationCancelled && mounted) {
+        print("⚠️ Safety cleanup triggered for animation of word $newWordId");
+        cleanupAnimations();
       }
     });
-    return playerWords;
+  }
+  List<Map<String, dynamic>> processPlayerWords(
+      Map<String, dynamic> players, List<Map<String, dynamic>> words) {
+    List<Map<String, dynamic>> processedPlayerWords = [];
+
+    players.forEach((playerId, playerData) {
+      processedPlayerWords.add({
+        'playerId': playerId,
+        'username': playerData['username'],
+        'words': <Map<String, dynamic>>[],
+      });
+    });
+
+    // Add destination words (as placeholders) from current data
+    for (var currentWord in words) {
+      final wordId = currentWord['wordId'] as String;
+      final ownerId = currentWord['current_owner_user_id'] as String;
+      final status = (currentWord['status'] as String? ?? '').toLowerCase();
+
+      if (!status.contains("valid")) continue;
+
+      if (_destinationWordIdsForAnimation.contains(wordId)) {
+        final playerEntry = processedPlayerWords.firstWhere((p) => p['playerId'] == ownerId, orElse: () => {});
+        if (playerEntry.isNotEmpty) {
+          final placeholderWord = Map<String, dynamic>.from(currentWord);
+          placeholderWord['isAnimatingDestinationPlaceholder'] = true;
+          (playerEntry['words'] as List<Map<String, dynamic>>).add(placeholderWord);
+        }
+      } else if (!_sourceWordIdsForAnimation.contains(wordId)) {
+        // If it's not a destination and not a source (which are handled from prevData),
+        // then it's a normal current word.
+        final playerEntry = processedPlayerWords.firstWhere((p) => p['playerId'] == ownerId, orElse: () => {});
+        if (playerEntry.isNotEmpty) {
+          (playerEntry['words'] as List<Map<String, dynamic>>).add(currentWord);
+        }
+      }
+    }
+
+    // Add source words from previous data
+    if (_previousGameData != null) {
+      final prevWordsList = (_previousGameData!['words'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+      for (var prevWord in prevWordsList) {
+        final prevWordId = prevWord['wordId'] as String;
+        final prevOwnerId = prevWord['current_owner_user_id'] as String;
+        final prevStatus = (prevWord['status'] as String? ?? '').toLowerCase();
+
+        if (!prevStatus.contains("valid")) continue;
+
+        if (_sourceWordIdsForAnimation.contains(prevWordId)) {
+          final playerEntry = processedPlayerWords.firstWhere((p) => p['playerId'] == prevOwnerId, orElse: () => {});
+          if (playerEntry.isNotEmpty) {
+            (playerEntry['words'] as List<Map<String, dynamic>>).add(prevWord);
+          }
+        }
+      }
+    } else {
+      // No previous data, just process normally
+      words.forEach((word) {
+        final status = (word['status'] as String? ?? '').toLowerCase();
+        if (status.contains("valid") && !_destinationWordIdsForAnimation.contains(word['wordId'])) {
+          final ownerId = word['current_owner_user_id'];
+          final playerEntry = processedPlayerWords.firstWhere((p) => p['playerId'] == ownerId, orElse: () => {});
+          if (playerEntry.isNotEmpty) {
+            (playerEntry['words'] as List<Map<String, dynamic>>).add(word);
+          }
+        }
+      });
+    }
+    return processedPlayerWords;
   }
 
   String _findTileLocation(List<Tile> allTiles, dynamic tileId) {
@@ -176,12 +617,12 @@ class GameScreenState extends ConsumerState<GameScreen>
       tile.location = _findTileLocation(allTiles, tile.tileId);
     }
 
-    print(
-        "💚💚💚 Sending tileIds... officiallySelectedTileIds: $officiallySelectedTileIds, inputtedLetters: ${inputtedLetters.map((tile) => {
-              'letter': tile.letter,
-              'location': tile.location,
-              'tileId': tile.tileId
-            }).toList()}");
+    // print(
+    //     "💚💚💚 Sending tileIds... officiallySelectedTileIds: $officiallySelectedTileIds, inputtedLetters: ${inputtedLetters.map((tile) => {
+    //           'letter': tile.letter,
+    //           'location': tile.location,
+    //           'tileId': tile.tileId
+    //         }).toList()}");
 
     // Exit early if not enough letters
     if (inputtedLetters.length < 3) return;
@@ -329,11 +770,11 @@ class GameScreenState extends ConsumerState<GameScreen>
       }
     });
 
-    print(
-        "🔄🔄✅🔄🔄 Inputted Letters (after sync): ${inputtedLetters.map((t) => '${t.letter}: ${t.tileId}').toList()}");
+    // print(
+    //     "🔄🔄✅🔄🔄 Inputted Letters (after sync): ${inputtedLetters.map((t) => '${t.letter}: ${t.tileId}').toList()}");
 
-    print(
-        "🔄🔄🔄 Fixed Sync: officiallySelectedTileIds = $officiallySelectedTileIds");
+    // print(
+    //     "🔄🔄🔄 Fixed Sync: officiallySelectedTileIds = $officiallySelectedTileIds");
   }
 
   void _handleBackspace() {
@@ -375,8 +816,8 @@ class GameScreenState extends ConsumerState<GameScreen>
   }
 
   void handleTileSelection(Tile tile, bool isSelected) {
-    print(
-        "in handleTileSelection: letter: ${tile.letter}, tileId: ${tile.tileId}, isSelected: $isSelected");
+    // print(
+    //     "in handleTileSelection: letter: ${tile.letter}, tileId: ${tile.tileId}, isSelected: $isSelected");
     setState(() {
       if (isSelected) {
         // If the tile is not already selected, add it to the selected tiles
@@ -416,18 +857,18 @@ class GameScreenState extends ConsumerState<GameScreen>
   void _assignLetterToThisTileId(letter, tileId) {
     setState(() {
       if (tileId != "TBD" || tileId != "invalid") {
-        print(
-            "✅ _assignLetterToThisTileId officiallySelectedTileIds before: $officiallySelectedTileIds");
-        print("✅ _assignLetterToThisTileId usedTileIds before: $usedTileIds");
-        print(
-            "✅ _assignLetterToThisTileId inputtedLetters before: ${inputtedLetters.map((tile) => {
-                  'letter': tile.letter,
-                  'tileId': tile.tileId
-                }).toList()}");
+        // print(
+        //     "✅ _assignLetterToThisTileId officiallySelectedTileIds before: $officiallySelectedTileIds");
+        // print("✅ _assignLetterToThisTileId usedTileIds before: $usedTileIds");
+        // print(
+        //     "✅ _assignLetterToThisTileId inputtedLetters before: ${inputtedLetters.map((tile) => {
+        //           'letter': tile.letter,
+        //           'tileId': tile.tileId
+        //         }).toList()}");
 
         officiallySelectedTileIds.add(tileId);
-        print(
-            "✅ _assignLetterToThisTileId() (only one option) Assigned tileId $tileId to letter $letter");
+        // print(
+        // "✅ _assignLetterToThisTileId() (only one option) Assigned tileId $tileId to letter $letter");
         inputtedLetters.removeLast();
         final newTileLocation = allTiles
             .firstWhere(
@@ -453,9 +894,9 @@ class GameScreenState extends ConsumerState<GameScreen>
   }
 
   void _handleLetterTyped(Map<String, dynamic> gameData, String letter) {
-    print("##################################################################");
-    print("######################Typed letter: $letter ######################");
-    print("##################################################################");
+    // print("##################################################################");
+    // print("######################Typed letter: $letter ######################");
+    // print("##################################################################");
     setState(() {
       inputtedLetters.add(Tile(letter: letter, tileId: 'TBD', location: ''));
     });
@@ -463,10 +904,10 @@ class GameScreenState extends ConsumerState<GameScreen>
     // Find all tiles that match this letter that are not already in inputtedLetters and not
     // already in officiallySelectedTileIds or in usedTileIds
     final tilesWithThisLetter = _findAvailableTilesWithThisLetter(letter);
-    print(
-        "Tiles with this letter (found everywhere except inputtedLetters/officiallySelected/usedTileIds):");
+    // print(
+    //     "Tiles with this letter (found everywhere except inputtedLetters/officiallySelected/usedTileIds):");
     for (var tile in tilesWithThisLetter) {
-      print("Tile (${tile.letter}): id: ${tile.tileId} - ${tile.location}");
+      // print("Tile (${tile.letter}): id: ${tile.tileId} - ${tile.location}");
     }
     // If no tiles match this typed letter
     if (tilesWithThisLetter.isEmpty) {
@@ -489,8 +930,8 @@ class GameScreenState extends ConsumerState<GameScreen>
           )
           .tileId
           .toString();
-      print(
-          "🌿✅✅✅✅ Only one tile found for letter $letter:...assignLetterToThisTileId --> tileId = $tileId");
+      // print(
+      //     "🌿✅✅✅✅ Only one tile found for letter $letter:...assignLetterToThisTileId --> tileId = $tileId");
       // If the tileId is already in inputtedLetters or officiallySelectedTileIds, then it cannot be assigned
       if (officiallySelectedTileIds.contains(tileId) ||
           inputtedLetters
@@ -510,9 +951,9 @@ class GameScreenState extends ConsumerState<GameScreen>
       if (inputtedLetters.length > 1) {
         potentiallySelectedTileIds.addAll(potentialMatches);
         // More than two letters → Start refining
-        print(
-            "potentiallySelected[highlighted] tile IDs for after typing $letter: $potentiallySelectedTileIds");
-        print("More than one letter typed, refining potential matches...");
+        // print(
+        //     "potentiallySelected[highlighted] tile IDs for after typing $letter: $potentiallySelectedTileIds");
+        // print("More than one letter typed, refining potential matches...");
         _refinePotentialMatches(gameData);
       }
     });
@@ -520,8 +961,8 @@ class GameScreenState extends ConsumerState<GameScreen>
 
   void _assignTileId(String letter, List<Tile> tilesWithThisLetter) {
     for (var tile in tilesWithThisLetter) {
-      print(
-          "in _assignTileId function: letter = $letter, tilesWithThisLetterTile (${tile.letter}): id: ${tile.tileId} - ${tile.location}");
+      // print(
+      //     "in _assignTileId function: letter = $letter, tilesWithThisLetterTile (${tile.letter}): id: ${tile.tileId} - ${tile.location}");
     }
     // If there is only one tile with this letter, assign it to the selected tile
     if (tilesWithThisLetter.length == 1) {
@@ -531,7 +972,7 @@ class GameScreenState extends ConsumerState<GameScreen>
         inputtedLetters.add(Tile(letter: letter, tileId: tileId, location: ''));
         potentiallySelectedTileIds.add(tileId);
         officiallySelectedTileIds.add(tileId);
-        print("✅ (only one option) Assigned tileId $tileId to letter $letter");
+        // print("✅ (only one option) Assigned tileId $tileId to letter $letter");
       });
       return;
     }
@@ -558,8 +999,8 @@ class GameScreenState extends ConsumerState<GameScreen>
             final location = tile.location;
             usedTileIds.add(tileId);
             officiallySelectedTileIds.add(tileId);
-            print(
-                "✅ Assigned tileId $tileId from location ($location) to letter $letter");
+            // print(
+            //     "✅ Assigned tileId $tileId from location ($location) to letter $letter");
           });
         } else {
           // If no middle tile is found, assign any available tile that has not been used yet
@@ -575,8 +1016,8 @@ class GameScreenState extends ConsumerState<GameScreen>
               final location = fallbackTile.location;
               usedTileIds.add(fallbackTileId);
               officiallySelectedTileIds.add(fallbackTileId);
-              print(
-                  "✅ Assigned fallback tileId $fallbackTileId from location ($location) to letter $letter");
+              // print(
+              //     "✅ Assigned fallback tileId $fallbackTileId from location ($location) to letter $letter");
             });
           } else {
             print("❌ No available tileId found for letter $letter");
@@ -594,26 +1035,26 @@ class GameScreenState extends ConsumerState<GameScreen>
       return inputtedLetters.any((inputtedTile) =>
           inputtedTile.tileId.toString() == tile.tileId.toString());
     }).toList();
-    print(
-        "🔚 End of _assignTileId function, inputtedLetters=: ${matchingTiles.map((tile) => {
-              'letter': tile.letter,
-              'tileId': tile.tileId,
-              'location': tile.location
-            }).toList()}");
+    // print(
+    //     "🔚 End of _assignTileId function, inputtedLetters=: ${matchingTiles.map((tile) => {
+    //           'letter': tile.letter,
+    //           'tileId': tile.tileId,
+    //           'location': tile.location
+    //         }).toList()}");
   }
 
   void _reassignTilesToMiddle() {
     // Needs to look through the inputtedLetters and find ones that are either invalid or from non-middle locations
     // Then, it should find a matching middle tile and assign it to the selectedTile
     // Needs to make sure that middle tile has not already been assigned (ie its tileId is not in inputtedLetters)
-    print("🔍🔍🔍 Start of _reassignTilesToMiddle function");
+    // print("🔍🔍🔍 Start of _reassignTilesToMiddle function");
     final List<Tile> allMiddleTiles =
         allTiles.where((tile) => tile.location == 'middle').toList();
     // print all middleTiles
-    print("🔍 All selected tiles: ${inputtedLetters.map((tile) => {
-          'letter': tile.letter,
-          'tileId': tile.tileId
-        }).toList()}");
+    // print("🔍 All selected tiles: ${inputtedLetters.map((tile) => {
+    //       'letter': tile.letter,
+    //       'tileId': tile.tileId
+    //     }).toList()}");
     // if all the letters are already assigned to middle tiles, return
     // check every single tileId from inputtedLetters and see if the location of that tileId = middle
     if (inputtedLetters.every((tile) {
@@ -627,7 +1068,7 @@ class GameScreenState extends ConsumerState<GameScreen>
       }
       return false; // If tileId is TBD, return false
     })) {
-      print("🔍☑ All selected tiles are already assigned to middle tiles");
+      // print("🔍☑ All selected tiles are already assigned to middle tiles");
       return;
     }
     setState(() {
@@ -695,12 +1136,12 @@ class GameScreenState extends ConsumerState<GameScreen>
 
   void _refinePotentialMatches(Map<String, dynamic> gameData) {
     final String? userId = FirebaseAuth.instance.currentUser?.uid;
-    print("💼💼💼 Start of _refinePotentialMatches function");
+    // print("💼💼💼 Start of _refinePotentialMatches function");
 
     final String typedWord = inputtedLetters.map((tile) => tile.letter).join();
     final List<String> typedWordLetters = typedWord.split('');
 
-    print("💼 Current typed word: $typedWord");
+    // debugPrint("💼 Current typed word: $typedWord");
 
     final Map<String, List<String>> letterToTileIds = {};
 
@@ -711,7 +1152,7 @@ class GameScreenState extends ConsumerState<GameScreen>
       }
     }
 
-    debugPrint("🔍 Possible tile matches for each letter: $letterToTileIds");
+    // debugPrint("🔍 Possible tile matches for each letter: $letterToTileIds");
 
     final bool allSelectedLettersHaveMiddleMatch =
         inputtedLetters.every((tile) {
@@ -725,13 +1166,19 @@ class GameScreenState extends ConsumerState<GameScreen>
     });
 
     if (allSelectedLettersHaveMiddleMatch) {
-      debugPrint(
-          "✅ All selected letters have at least one potential match from the middle");
+      // debugPrint(
+      //     "✅ All selected letters have at least one potential match from the middle");
       _reassignTilesToMiddle();
-    } else if (!allSelectedLettersHaveMiddleMatch) {
-      print("❌ Not all selected letters have a middle match");
+    } else {
+      debugPrint("❌ Not all selected letters have a middle match");
 
       final matchingWords = (gameData['words'] as List).where((word) {
+        // Ensure the word status is valid
+        final String status = (word['status'] as String? ?? '').toLowerCase();
+        if (!status.contains("valid")) {
+          return false;
+        }
+
         final List<String> wordTileIds = (word['tileIds'] as List<dynamic>)
             .map((id) => id.toString())
             .toList();
@@ -743,34 +1190,41 @@ class GameScreenState extends ConsumerState<GameScreen>
               .letter;
         }).join();
 
-        print("🔍 Checking word: $wordString with tileIds: $wordTileIds");
+        // debugPrint("🔍 Checking word: $wordString with tileIds: $wordTileIds");
 
-        // ✅ Check if every letter of the word exists in typedWordLetters (typed letters)
-        final bool isContained = wordString
-            .split('')
-            .every((letter) => typedWordLetters.contains(letter));
+        // Check if every letter of the word exists in typedWordLetters with correct frequency
+        List<String> tempLetters = List.from(typedWordLetters);
+        bool isContained = true;
+        for (var letter in wordString.split('')) {
+          if (tempLetters.contains(letter)) {
+            tempLetters.remove(letter);
+          } else {
+            isContained = false;
+            break;
+          }
+        }
 
         if (!isContained) {
-          print("❌ $wordString is NOT contained in $typedWord");
+          // debugPrint("❌ $wordString is NOT contained in $typedWord");
         } else {
-          print("✅ $wordString is contained in $typedWord");
+          // debugPrint("✅ $wordString is contained in $typedWord");
         }
 
         return isContained;
       }).toList();
 
-      print("💀 Found contained matching words: $matchingWords");
+      // print("💀 Found contained matching words: $matchingWords");
 
       if (matchingWords.isEmpty) {
-        print(
-            "✅ No full word matches found, and letters are not all from middle tiles");
+        // print(
+        // "✅ No full word matches found, and letters are not all from middle tiles");
         // _reassignTilesToMiddle();
       } else {
-        print(
-            "There are exact matching words. Proceeding to reassign tiles to the longest matching word that does not belong to this user...");
+        // print(
+        // "There are exact matching words. Proceeding to reassign tiles to the longest matching word that does not belong to this user...");
         // If not all selected letters have a middle match, reassign tiles to middle
         // check if there are any full words that can be formed with the current inputted letters
-        print("💀 all the words that match: $matchingWords");
+        // print("💀 all the words that match: $matchingWords");
         // Sort by the length of the word, longest first
         matchingWords.sort((a, b) => b.length.compareTo(a.length));
 
@@ -778,15 +1232,15 @@ class GameScreenState extends ConsumerState<GameScreen>
         final matchingWordToUse = matchingWords.firstWhere(
             (word) => word['current_owner_user_id'] != userId,
             orElse: () => matchingWords.first);
-        print(
-            "💀 matchingWordToUse (the word to steal/take): $matchingWordToUse");
+        // print(
+        // "💀 matchingWordToUse (the word to steal/take): $matchingWordToUse");
         // Assign the tileIds of the matching word to the selected tiles
         final tileIdsToReassignInputtedLettersToFromMatchingWord =
             matchingWordToUse['tileIds'] as List<dynamic>;
-        print("if you make it here...interesting (790)");
-        print(
-            "💀 tileIds to reassign inputted letters to: $tileIdsToReassignInputtedLettersToFromMatchingWord");
-        print("💀 tileIds from matchingWord = ${matchingWordToUse['tileIds']}");
+        // print("if you make it here...interesting (790)");
+        // print(
+        // "💀 tileIds to reassign inputted letters to: $tileIdsToReassignInputtedLettersToFromMatchingWord");
+        // print("💀 tileIds from matchingWord = ${matchingWordToUse['tileIds']}");
         // create Tile objects from those tileIds
         final matchingTiles =
             tileIdsToReassignInputtedLettersToFromMatchingWord.map((tileId) {
@@ -798,46 +1252,44 @@ class GameScreenState extends ConsumerState<GameScreen>
         }).toList();
 
         // reassign the tileIds of the inputtedLetters to those tileIds
-        print(
-            "💀 calling _reassignTilesToWord with wordId = ${matchingWordToUse['wordId']}");
+        // print(
+        // "💀 calling _reassignTilesToWord with wordId = ${matchingWordToUse['wordId']}");
         _reassignTilesToWord(gameData, matchingWordToUse['wordId']);
-        print("just called _reassignTilesToWord");
+        // print("just called _reassignTilesToWord");
         // for each tileId in tileIdsToReassignInputtedLettersToFromMatchingWord, find the corresponding tile in allTiles
         // and reassign the tileId of the inputtedLetters to that tileId
       }
       _syncTileIdsWithInputtedLetters();
     }
 
-    print("🔚🔚🔚 End of refine function, 🩵 officiallySelectedTileIds = ");
+    // print("🔚🔚🔚 End of refine function, 🩵 officiallySelectedTileIds = ");
     officiallySelectedTileIds.forEach((tileId) {
       final tile = allTiles.firstWhere(
         (t) => t.tileId.toString() == tileId.toString(),
         orElse: () => Tile(letter: '', tileId: '', location: ''),
       );
-      print(
-          "🩵🩵 officiallySelectedTiles tile: ${tile.letter} - ${tile.tileId} - ${tile.location}");
+      // print(
+      //     "🩵🩵 officiallySelectedTiles tile: ${tile.letter} - ${tile.tileId} - ${tile.location}");
     });
   }
 
   _reassignTilesToWord(Map<String, dynamic> gameData, String wordId) {
-    print("💀💀💀 Start of _reassignTilesToWord function, wordId = $wordId");
+    // print("💀💀💀 Start of _reassignTilesToWord function, wordId = $wordId");
     // This function should reassign the tileIds of the inputtedLetters to the tileIds of the word with the given wordId
     final word = getWordData(gameData, wordId);
     if (word == null) {
       print("❌ Word not found for wordId: $wordId");
       return;
     }
-    print("💀 Word data for wordId $wordId: $word");
+    // print("💀 Word data for wordId $wordId: $word");
     final List<String> tileIds = (word['tileIds'] as List<dynamic>)
         .map((tileId) => tileId.toString())
         .toList();
-    print("maybe this is the problem (str int problem ?)837");
-    print("💀 tileIds from word = $tileIds");
 
     setState(() {
       for (var selectedTile in inputtedLetters) {
-        print(
-            "🔍_reassignTilesToWord Checking selected tile to see if it needs reassignment to a word tile:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
+        // print(
+        //     "🔍_reassignTilesToWord Checking selected tile to see if it needs reassignment to a word tile:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
         if (selectedTile.tileId != 'TBD') {
           final assignedTile = allTiles.firstWhere(
             (tile) => tile.tileId.toString() == selectedTile.tileId,
@@ -848,8 +1300,8 @@ class GameScreenState extends ConsumerState<GameScreen>
             continue;
           }
 
-          print(
-              "💀💀💀_reassignTilesToWord This tile needs to be reassigned to a word tile: letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
+          // print(
+          //     "💀💀💀_reassignTilesToWord This tile needs to be reassigned to a word tile: letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
 
           final matchingWordTile = allTiles.firstWhere(
             (tile) =>
@@ -860,30 +1312,30 @@ class GameScreenState extends ConsumerState<GameScreen>
             orElse: () => Tile(letter: '', tileId: '', location: ''),
           );
 
-          print(
-              "💀💀💀_reassignTilesToWord Matching word tile it can be reassigned to: ${matchingWordTile.letter}, tileId: ${matchingWordTile.tileId}");
+          // print(
+          //     "💀💀💀_reassignTilesToWord Matching word tile it can be reassigned to: ${matchingWordTile.letter}, tileId: ${matchingWordTile.tileId}");
 
           if (matchingWordTile.tileId != '') {
             officiallySelectedTileIds.remove(selectedTile.tileId);
             selectedTile.tileId = matchingWordTile.tileId.toString();
             officiallySelectedTileIds.add(matchingWordTile.tileId.toString());
-            print(
-                "!!! 💀💀💀_reassignTilesToWord Reassigned tile to be:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
+            // print(
+            //     "!!! 💀💀💀_reassignTilesToWord Reassigned tile to be:  letter: ${selectedTile.letter}, tileId: ${selectedTile.tileId}");
           }
         }
       }
     });
 
-    print(
-        "💀💀💀 End of _reassignTilesToWord function: ${inputtedLetters.map((tile) => {
-              'letter': tile.letter,
-              'tileId': tile.tileId
-            }).toList()}");
-    print(
-        "💀🔄💀 Reassigned tileIds of inputtedLetters to those of the word with wordId $wordId: ${inputtedLetters.map((tile) => {
-              'letter': tile.letter,
-              'tileId': tile.tileId
-            }).toList()}");
+    // print(
+    //     "💀💀💀 End of _reassignTilesToWord function: ${inputtedLetters.map((tile) => {
+    //           'letter': tile.letter,
+    //           'tileId': tile.tileId
+    //         }).toList()}");
+    // print(
+    //     "💀🔄💀 Reassigned tileIds of inputtedLetters to those of the word with wordId $wordId: ${inputtedLetters.map((tile) => {
+    //           'letter': tile.letter,
+    //           'tileId': tile.tileId
+    //         }).toList()}");
     _syncTileIdsWithInputtedLetters();
   }
 
@@ -900,7 +1352,7 @@ class GameScreenState extends ConsumerState<GameScreen>
       ),
     );
   }
-
+  
   @override
   Widget build(BuildContext context) {
     final asyncGameData = ref.watch(gameDataProvider(widget.gameId));
@@ -912,17 +1364,39 @@ class GameScreenState extends ConsumerState<GameScreen>
               child:
                   CircularProgressIndicator(key: Key("gameDataNullIndicator")));
         }
+        final Map<String, dynamic> currentGameData = gameDataOrNull;
+        // print("💀💀💀 Current game data: $currentGameData");
         // Successfully got data
-        final Map<String, dynamic> gameData = gameDataOrNull;
-        this.currentPlayerTurn = gameData['currentPlayerTurn'] as String? ?? '';
-        // 1) turn flat JSON into Tile objects
-        final rawTiles = gameData['tiles'] as List<dynamic>?;
-        // print("rawTiles: $rawTiles");
-        final tilesJson = rawTiles ?? <dynamic>[];
-        this.allTiles =
-            tilesJson.cast<Map<String, dynamic>>().map(Tile.fromMap).toList();
+        //// Capture metrics from the PREVIOUS state before processing current data
+        if (_previousGameData != null) {
+          _capturePreviousTileMetrics();
+        }
 
-        final rawWords = gameData['words'] as List<dynamic>?;
+        // Process current game data (assign to allTiles, playerWords, etc.)
+        this.currentPlayerTurn =
+            currentGameData['currentPlayerTurn'] as String? ?? '';
+        // 1) turn flat JSON into Tile objects
+        final rawTiles = currentGameData['tiles'] as List<dynamic>?;
+        final tilesJson = rawTiles ?? <dynamic>[];
+
+        allTiles = tilesJson.cast<Map<String, dynamic>>().map((item) {
+          final tile = Tile.fromMap(item);
+          _tileGlobalKeys.putIfAbsent(
+              tile.tileId.toString(), () => GlobalKey());
+          return tile;
+        }).toList();
+
+        List<Tile> newAllTiles = [];
+        for (var item in tilesJson.cast<Map<String, dynamic>>()) {
+          final tile = Tile.fromMap(item);
+          // Ensure a key exists for every tile ID that might be displayed
+          // _tileGlobalKeys.putIfAbsent(
+          //     tile.tileId.toString(), () => GlobalKey());
+          newAllTiles.add(tile);
+        }
+        allTiles = newAllTiles;
+
+        final rawWords = currentGameData['words'] as List<dynamic>?;
         final wordsList =
             (rawWords ?? <dynamic>[]).cast<Map<String, dynamic>>();
         // 2) derive the counts
@@ -931,35 +1405,44 @@ class GameScreenState extends ConsumerState<GameScreen>
             .where((t) => t.letter == null || t.letter!.isEmpty)
             .length;
         // 3) isolate the “middle” tiles
-        this.middleTiles =
-            this.allTiles.where((t) => t.location == 'middle').toList();
+        middleTiles = allTiles.where((t) => t.location == 'middle').toList();
         // 4) figure out whose turn it is
         final currentPlayerTurn =
-            gameData['currentPlayerTurn'] as String? ?? '';
+            currentGameData['currentPlayerTurn'] as String? ?? '';
         _updateTurnState(currentUserId == currentPlayerTurn);
         // 5) build player → username map and color map
-        final playersData = gameData['players'] as Map<dynamic, dynamic>?;
+        final playersData =
+            currentGameData['players'] as Map<dynamic, dynamic>?;
         final playersMap =
             (playersData ?? <String, dynamic>{}).cast<String, dynamic>();
         final playerIdToUsername = <String, String>{};
-        this.playerColorMap.clear(); // Clear previous values
+        playerColorMap.clear(); // Clear previous values
         var colorIdx = 0;
         for (final entry in playersMap.entries) {
           playerIdToUsername[entry.key] =
               entry.value['username'] as String? ?? '';
-          this.playerColorMap[entry.key] =
+          playerColorMap[entry.key] =
               playerColors[colorIdx++ % playerColors.length];
         }
         // Assign to class member 'playerIdToUsernameMap'
-        this.playerIdToUsernameMap = playerIdToUsername;
+        playerIdToUsernameMap = playerIdToUsername;
         // 6) build & sort playerWords
-        this.playerWords = processPlayerWords(playersMap, wordsList);
+
+        if (_previousGameData != null && mounted) {
+          print(
+              "🔄 Comparing previous and current game data for transformations.");
+          _checkForWordTransformations(_previousGameData!, currentGameData);
+        }
+        playerWords = processPlayerWords(playersMap, wordsList);
         final me = FirebaseAuth.instance.currentUser?.uid;
-        this.playerWords.sort((a, b) {
+
+        playerWords.sort((a, b) {
           if (a['playerId'] == me) return 1;
           if (b['playerId'] == me) return -1;
           return 0;
         });
+        _previousGameData = Map<String, dynamic>.from(currentGameData);
+
         var screenSize = MediaQuery.of(context).size;
         final double tileSize = screenSize.width > 600 ? 40 : 25;
         final preRotatedText = Transform.rotate(
@@ -995,7 +1478,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                   RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
 
               if (isLetter && inputtedLetters.length < 16) {
-                _handleLetterTyped(gameData, key.keyLabel.toUpperCase());
+                _handleLetterTyped(currentGameData, key.keyLabel.toUpperCase());
               } else if (key == LogicalKeyboardKey.backspace) {
                 _handleBackspace();
               } else if (key == LogicalKeyboardKey.enter) {
@@ -1005,7 +1488,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                             'letter': tile.letter,
                             'tileId': tile.tileId
                           }).toList()}");
-                  _sendTileIds(gameData);
+                  _sendTileIds(currentGameData);
                 } else {
                   _flipNewTile();
                 }
@@ -1073,30 +1556,38 @@ class GameScreenState extends ConsumerState<GameScreen>
                     // Player Words
                     Expanded(
                       child: ListView.builder(
-                        itemCount: this.playerWords.length,
+                        itemCount: playerWords.length,
                         itemBuilder: (context, index) {
-                          final playerWordData = this.playerWords[index];
+                          final playerWordData = playerWords[index];
                           final isCurrentPlayerTurn =
                               playerWordData['playerId'] ==
-                                  this.currentPlayerTurn;
-                          final score = gameData['players']
+                                  currentPlayerTurn;
+                          final score = currentGameData['players']
                                   [playerWordData['playerId']]['score'] ??
                               0;
                           final maxScoreToWin =
-                              gameData['max_score_to_win_per_player'] as int;
+                              currentGameData['max_score_to_win_per_player']
+                                  as int;
 
                           return PlayerWords(
+                            // Pass the animation flag down if PlayerWords/TileWidget needs to know
+                            // For now, PlayerWords will receive words already processed,
+                            // some of which might have 'isAnimatingDestinationPlaceholder'.
+                            // TileWidget within PlayerWords should handle this flag for opacity.
+                            // This is handled by the PlayerWords widget internally by checking the word data.
+                            key: ValueKey(playerWordData['playerId']),
                             username: playerWordData['username'],
                             playerId: playerWordData['playerId'],
                             words: playerWordData['words'],
-                            playerColors: this.playerColorMap,
+                            playerColors: playerColorMap,
                             onClickTile: handleTileSelection,
                             officiallySelectedTileIds:
                                 officiallySelectedTileIds,
                             potentiallySelectedTileIds:
                                 potentiallySelectedTileIds,
                             onClearSelection: () {},
-                            allTiles: this.allTiles,
+                            allTiles: allTiles,
+                            tileGlobalKeys: _tileGlobalKeys,
                             tileSize: tileSize,
                             isCurrentPlayerTurn: isCurrentPlayerTurn,
                             score: score,
@@ -1124,10 +1615,10 @@ class GameScreenState extends ConsumerState<GameScreen>
                                   ),
                                 ),
                                 const SizedBox(height: 5),
-                                this.middleTiles.isEmpty
+                                middleTiles.isEmpty
                                     ? Expanded(
                                         child: Text(
-                                          "Flip a tile to begin – it's ${this.playerIdToUsernameMap[this.currentPlayerTurn]}'s turn to flip a tile!",
+                                          "Flip a tile to begin – it's ${playerIdToUsernameMap[currentPlayerTurn]}'s turn to flip a tile!",
                                           style: TextStyle(
                                               fontSize: 16,
                                               color: Colors.white),
@@ -1145,14 +1636,19 @@ class GameScreenState extends ConsumerState<GameScreen>
                                             crossAxisSpacing: 1.0,
                                             mainAxisSpacing: 1.0,
                                           ),
-                                          itemCount: this.middleTiles.length,
+                                          itemCount: middleTiles.length,
                                           itemBuilder: (context, index) {
                                             if (index >=
-                                                this.middleTiles.length) {
+                                                middleTiles.length) {
                                               return SizedBox.shrink();
                                             }
                                             final tile =
-                                                this.middleTiles[index];
+                                                middleTiles[index];
+                                            final tileIdStr =
+                                                tile.tileId.toString();
+                                            // _tileGlobalKeys.putIfAbsent(
+                                            //     tileIdStr, () => GlobalKey());
+
                                             final isSelected =
                                                 officiallySelectedTileIds
                                                     .contains(
@@ -1165,7 +1661,8 @@ class GameScreenState extends ConsumerState<GameScreen>
                                               padding:
                                                   const EdgeInsets.symmetric(
                                                       horizontal: 1.0),
-                                              child: TileWidget(
+                                                  child: TileWidget( // Ensure _tileGlobalKeys[tileIdStr] is THE key
+                                                    key: _tileGlobalKeys[tileIdStr], // Use GlobalKey as the widget's key
                                                 tile: tile,
                                                 tileSize: tileSize,
                                                 onClickTile:
@@ -1197,9 +1694,9 @@ class GameScreenState extends ConsumerState<GameScreen>
                               flex: 1,
                               child: GameLog(
                                   gameId: widget.gameId,
-                                  gameData: gameData,
+                                  gameData: currentGameData,
                                   playerIdToUsernameMap:
-                                      this.playerIdToUsernameMap,
+                                      playerIdToUsernameMap,
                                   tileSize: tileSize),
                             ),
                         ],
@@ -1249,7 +1746,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                 const SizedBox(width: 10),
                 FloatingActionButton(
                   onPressed: (inputtedLetters.length >= 3)
-                      ? () => _sendTileIds(gameData)
+                      ? () => _sendTileIds(currentGameData)
                       : null,
                   child: const Icon(Icons.send_rounded),
                   backgroundColor:
@@ -1342,5 +1839,284 @@ class GameScreenState extends ConsumerState<GameScreen>
         return Center(child: Text('Error loading game: $error'));
       },
     );
+  }
+
+  void _capturePreviousTileMetrics() {
+    if (!mounted) return;
+    _previousTileGlobalPositions.clear();
+    _previousTileSizes.clear();
+
+    final overlayContext = Overlay.of(context)?.context;
+    if (overlayContext == null) {
+      print("Error: Overlay context is null in _capturePreviousTileMetrics.");
+      return;
+    }
+
+    final RenderObject? overlayRenderObject = overlayContext.findRenderObject();
+    if (overlayRenderObject == null) {
+      print(
+          "Error: Overlay RenderObject is null in _capturePreviousTileMetrics.");
+      return;
+    }
+
+    _tileGlobalKeys.forEach((tileId, key) {
+      if (key.currentContext != null && key.currentContext!.mounted) {
+        final renderBox = key.currentContext!.findRenderObject() as RenderBox?;
+        // Detailed log before attempting to use renderBox
+        // print("Metrics Capture Attempt for $tileId: KeyContextMounted=${key.currentContext?.mounted}, RenderBoxNull=${renderBox == null}, HasSize=${renderBox?.hasSize}, Attached=${renderBox?.attached}");
+        if (renderBox != null && renderBox.hasSize && renderBox.attached) {
+          try {
+            _previousTileGlobalPositions[tileId] = renderBox
+                .localToGlobal(Offset.zero, ancestor: overlayRenderObject);
+            _previousTileSizes[tileId] = renderBox.size;
+            // print("Metrics Captured for $tileId: Pos=${_previousTileGlobalPositions[tileId]}, Size=${_previousTileSizes[tileId]}");
+          } catch (e) {
+            print("Error in localToGlobal for tile $tileId: $e. RenderBox details: HasSize=${renderBox.hasSize}, Attached=${renderBox.attached}");
+          }
+        }
+      }
+    });
+  }
+
+
+void _checkForWordTransformations(
+      Map<String, dynamic> prevData, Map<String, dynamic> currentData) {
+    print("_checkForWordTransformations ");
+    bool animationScheduledThisCheck = false;
+
+    print("👀 _checkForWordTransformations called");
+    if (!mounted) {
+      print("👀 _checkForWordTransformations: not mounted, returning");
+      return;
+    }
+
+    final prevActions = prevData['actions'] as Map<String, dynamic>? ?? {};
+    final currentActions =
+        currentData['actions'] as Map<String, dynamic>? ?? {};
+
+    final prevWordsList = (prevData['words'] as List<dynamic>? ?? [])
+        .cast<Map<String, dynamic>>();
+
+    if (prevWordsList.isEmpty &&
+        prevActions.isNotEmpty &&
+        currentActions.length > prevActions.length) {
+      print(
+          "ℹ️ _checkForWordTransformations: prevWordsList is empty, but new actions detected. This might be okay if actions don't involve existing words.");
+    }
+
+    for (var actionId in currentActions.keys) {
+      if (!prevActions.containsKey(actionId)) {
+        // This is a new action
+        final action = currentActions[actionId] as Map<String, dynamic>;
+        final actionType = action['type'] as String?;
+        print("🆕 ");
+        print("🆕 ");
+        print("🆕 New action detected: $actionId, Type: $actionType");
+        print("🆕 action = $action");
+        print("🆕 ");
+        print("🆕 ");
+
+        if (actionType == 'STEAL_WORD' ||
+            actionType == 'OWN_WORD_IMPROVEMENT') {
+          print(
+              "✅✅✅ TRANSFORMATION DETECTED by _checkForWordTransformations: $actionType for Action ID: $actionId.");
+
+          final originalWordId = action['originalWordId'] as String?;
+          final newWordId = action['wordId'] as String?;
+          final transformingPlayerId = action['playerId'] as String?;
+
+          if (originalWordId == null ||
+              newWordId == null ||
+              transformingPlayerId == null) {
+            print(
+                "⚠️ Transformation action $actionId ($actionType) missing key IDs (originalWordId, newWordId, or playerId). Action details: $action");
+            continue;
+          }
+
+          Map<String, dynamic>? originalWordData;
+          try {
+            originalWordData = prevWordsList.firstWhere(
+              (w) => w['wordId'] == originalWordId,
+            );
+          } catch (e) {
+            originalWordData = null;
+            print(
+                "⚠️ Original word $originalWordId not found in prevData for action $actionId. Error: $e");
+          }
+
+          if (originalWordData == null) {
+            print(
+                "⚠️ Original word $originalWordId not found in prevData for action $actionId. Cannot animate.");
+            continue;
+          }
+
+          final fromPlayerId =
+              originalWordData['current_owner_user_id'] as String?;
+
+          // Get ALL tile IDs for the new word directly from the action.
+          // ASSUMPTION: action['tileIds'] contains all tiles of the new word.
+          final allNewWordTileIdsDynamic = action['tileIds'] as List<dynamic>? ?? [];
+          final List<String> allNewWordTileIds = allNewWordTileIdsDynamic.map((id) => id.toString()).toList();
+
+          if (allNewWordTileIds.isEmpty) {
+            print("⚠️ Action $actionId ($actionType) 'tileIds' field (for the new word) is missing or empty. Cannot animate.");
+            continue;
+          }
+
+          // Get tile IDs from the original word to differentiate.
+          final originalWordTileIdsDynamic = originalWordData['tileIds'] as List<dynamic>? ?? [];
+          final List<String> originalWordTileIds = originalWordTileIdsDynamic.map((id) => id.toString()).toList();
+
+          if (fromPlayerId == null) {
+            print(
+                "⚠️ Original word $originalWordId data missing 'current_owner_user_id'. Cannot determine fromPlayerId.");
+            continue;
+          }
+          if (originalWordTileIds.isEmpty) {
+            // This condition checks if the original word had any tiles.
+            // It's okay if it's empty if allNewWordTileIds is populated (e.g., an improvement using only middle tiles).
+            print("ℹ️ Original word $originalWordId had no tiles or 'tileIds' was empty. Animating based on action['tileIds'] for new word $newWordId.");
+          }
+
+          // Capture positions for any tiles in allNewWordTileIds that are NOT from originalWordTileIds (i.e., from middle for this action)
+          Map<String, Offset> currentActionOverrideStartPositions = {};
+          Map<String, Size> currentActionOverrideStartSizes = {};
+          final overlayRenderObjectForCapture = Overlay.of(context)?.context.findRenderObject();
+
+          if (overlayRenderObjectForCapture != null) {
+            for (String tileIdToCapture in allNewWordTileIds) {
+              if (!originalWordTileIds.contains(tileIdToCapture)) { // Tile is new (from middle) for this action
+                final key = _tileGlobalKeys[tileIdToCapture];
+                if (key != null && key.currentContext != null && key.currentContext!.mounted) {
+                  final box = key.currentContext?.findRenderObject() as RenderBox?;
+                  if (box != null && box.hasSize && box.attached) {
+                    try {
+                      final pos = box.localToGlobal(Offset.zero, ancestor: overlayRenderObjectForCapture);
+                      final size = box.size;
+                      currentActionOverrideStartPositions[tileIdToCapture] = pos;
+                      currentActionOverrideStartSizes[tileIdToCapture] = size;
+                      if (currentUserId == transformingPlayerId) { // Log specifically for the local player
+                        print("📸 LOCAL PLAYER ($actionType): Captured override for middle tile $tileIdToCapture: Pos=$pos, Size=$size. Key context: ${key.currentContext}");
+                      }
+                    } catch (e) { 
+                      if (currentUserId == transformingPlayerId) {
+                        print("📸 LOCAL PLAYER ($actionType): ERROR capturing override for $tileIdToCapture: $e");
+                      } else {
+                        print("Error capturing immediate middle pos for $tileIdToCapture during $actionType: $e");
+                      }
+                    }
+                  } else {
+                    if (currentUserId == transformingPlayerId) {
+                        print("📸 LOCAL PLAYER ($actionType): RenderBox null/invalid for middle tile $tileIdToCapture. Key: $key, Context: ${key.currentContext}");
+                    }
+                  }
+                } else {
+                  if (currentUserId == transformingPlayerId) {
+                      print("📸 LOCAL PLAYER ($actionType): GlobalKey or context null/unmounted for middle tile $tileIdToCapture.");
+                  }
+                }
+              }
+            }
+          }
+          if (!_destinationWordIdsForAnimation.contains(newWordId)) {
+            print("Scheduling animation for $newWordId from $originalWordId");
+            _sourceWordIdsForAnimation.add(originalWordId);
+            _destinationWordIdsForAnimation.add(newWordId);
+            animationScheduledThisCheck = true;
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _startStealAnimation(
+                  originalWordId: originalWordId,
+                  newWordId: newWordId,
+                  tileIds: allNewWordTileIds, // Animate ALL tiles of the new word
+                  fromPlayerId: fromPlayerId,
+                  toPlayerId: transformingPlayerId,
+                  overrideStartPositions: currentActionOverrideStartPositions,
+                  overrideStartSizes: currentActionOverrideStartSizes,
+                );
+              }
+            });
+          }
+          continue; // Move to next action
+        }
+        
+        if (actionType == 'MIDDLE_WORD') {
+          print(
+              "✅✅✅ TRANSFORMATION DETECTED by _checkForWordTransformations: $actionType for Action ID: $actionId.");
+              
+          final newWordId = action['wordId'] as String?;
+          final playerId = action['playerId'] as String?;
+          final tileIdsDynamic = action['tileIds'] as List<dynamic>? ?? [];
+          final List<String> tileIds =
+              tileIdsDynamic.map((id) => id.toString()).toList();
+
+          if (newWordId == null || playerId == null || tileIds.isEmpty) {
+            print(
+                "⚠️ Transformation action $actionId ($actionType) missing key IDs (newWordId, playerId, or tileIds). Action details: $action");
+            continue;
+          }
+          
+          if (!_destinationWordIdsForAnimation.contains(newWordId)) {
+            print("Scheduling animation for new middle word $newWordId");
+            
+            // --- CAPTURE MIDDLE TILE POSITIONS NOW ---
+            // These are the actual starting positions for tiles coming from the middle.
+            Map<String, Offset> currentMiddleTileStartPositions = {};
+            Map<String, Size> currentMiddleTileStartSizes = {};
+            final overlayRenderObjectForCapture = Overlay.of(context)?.context.findRenderObject();
+
+            if (overlayRenderObjectForCapture != null) {
+              for (String tileIdToCapture in tileIds) {
+                final key = _tileGlobalKeys[tileIdToCapture];
+                if (key != null && key.currentContext != null && key.currentContext!.mounted) {
+                  final box = key.currentContext?.findRenderObject() as RenderBox?;
+                  if (box != null && box.hasSize && box.attached) {
+                    try {
+                      currentMiddleTileStartPositions[tileIdToCapture] = box.localToGlobal(Offset.zero, ancestor: overlayRenderObjectForCapture);
+                      currentMiddleTileStartSizes[tileIdToCapture] = box.size;
+                      // print("📸 Captured immediate middle pos for $tileIdToCapture: ${currentMiddleTileStartPositions[tileIdToCapture]}");
+                    } catch (e) { print("Error capturing immediate middle pos for $tileIdToCapture: $e");}
+                  }
+                }
+              }
+            }
+            // --- END CAPTURE ---
+
+            _destinationWordIdsForAnimation.add(newWordId);
+            animationScheduledThisCheck = true;
+
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                _startStealAnimation(
+                  originalWordId: null,
+                  newWordId: newWordId,
+                  tileIds: tileIds,
+                  fromPlayerId: 'middle', // Special ID for middle
+                  toPlayerId: playerId,
+                  overrideStartPositions: currentMiddleTileStartPositions,
+                  overrideStartSizes: currentMiddleTileStartSizes,
+                );
+              }
+            });
+          }
+          continue; // Move to next action
+        }
+      }
+    }
+
+    if (animationScheduledThisCheck) {
+      // This setState triggers a rebuild. In that rebuild:
+      // 1. processPlayerWords uses the updated _sourceWordIdsForAnimation and _destinationWordIdsForAnimation.
+      //    - Source words come from _previousGameData.
+      //    - Destination words come from currentData but are marked as placeholders.
+      // 2. PlayerWords renders placeholders for destination words, making their GlobalKeys available.
+      // The _startStealAnimation (post-frame) will then correctly find these keys.
+      // _capturePreviousTileMetrics (called at the start of the build) will have captured metrics
+      // from the state *before* this rebuild, which is what the animation needs for start positions.
+      setState(() {});
+    }
+    print(
+        "👀 Finished _checkForWordTransformations (formerly _checkForStolenWords)");
   }
 }

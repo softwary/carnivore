@@ -67,7 +67,7 @@ class _GameLogState extends State<GameLog> {
         if (actionType == 'STEAL_WORD') {
           logEntry['word'] = logData['word'] ?? '';
           logEntry['robbedUserId'] = logData['robbedUserId'] ?? '';
-          logEntry['stolenWord'] = logData['stolenWord'] ?? '';
+          logEntry['originalWordString'] = logData['originalWordString'] ?? '';
         }
         if (actionType == 'OWN_WORD_IMPROVEMENT') {
           logEntry['word'] = logData['word'] ?? '';
@@ -200,7 +200,7 @@ class _GameLogState extends State<GameLog> {
       case 'STEAL_WORD':
         final robbedId = log['robbedUserId'] as String;
         final robbedName = widget.playerIdToUsernameMap[robbedId] ?? robbedId;
-        final stolenWord = log['stolenWord'] as String?;
+        final stolenWord = log['originalWordString'] as String?;
         return "$username stole $stolenWord from $robbedName!";
       case 'INVALID_LENGTH':
         return "$username submitted a word without enough letters:";

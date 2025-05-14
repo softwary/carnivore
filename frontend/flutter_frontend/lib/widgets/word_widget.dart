@@ -12,6 +12,7 @@ class WordCard extends StatefulWidget {
   final Set<String> potentiallySelectedTileIds;
   final VoidCallback onClearSelection;
   final double tileSize;
+  final Map<String, GlobalKey> tileGlobalKeys;
 
   const WordCard({
     Key? key,
@@ -24,6 +25,7 @@ class WordCard extends StatefulWidget {
     required this.potentiallySelectedTileIds,
     required this.onClearSelection,
     required this.tileSize,
+    required this.tileGlobalKeys,
   }) : super(key: key);
 
   @override
@@ -85,7 +87,9 @@ class _WordCardState extends State<WordCard> {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 1), // Adjusted spacing
                         child: TileWidget(
+                          key: ValueKey(tileId), 
                           tile: tile,
+                          globalKey: widget.tileGlobalKeys[tileId],
                           tileSize: widget.tileSize,
                           onClickTile: widget.onClickTile,
                           isSelected: isSelected,

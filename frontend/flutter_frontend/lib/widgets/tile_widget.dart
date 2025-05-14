@@ -7,6 +7,7 @@ class TileWidget extends StatefulWidget {
   final bool isSelected;
   final Color backgroundColor; // Background color property
   final double tileSize;
+  final GlobalKey? globalKey;
 
   const TileWidget({
     Key? key,
@@ -15,6 +16,7 @@ class TileWidget extends StatefulWidget {
     required this.tileSize,
     this.isSelected = false,
     this.backgroundColor = Colors.purple, // Default background color
+    this.globalKey,
   }) : super(key: key);
 
   @override
@@ -25,6 +27,7 @@ class _TileWidgetState extends State<TileWidget> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
+      key: widget.globalKey, 
       onTap: () {
         widget.onClickTile(widget.tile, !widget.isSelected);
       },
@@ -46,7 +49,7 @@ class _TileWidgetState extends State<TileWidget> {
             textAlign: TextAlign.center,
             style: TextStyle(
               fontSize: widget.tileSize * 0.5,
-              color: Colors.white, // Always white text
+              color: Colors.white,
               fontWeight: FontWeight.bold,
             ),
           ),

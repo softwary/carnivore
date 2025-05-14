@@ -13,6 +13,7 @@ class PlayerWords extends StatelessWidget {
   final Set<String> potentiallySelectedTileIds;
   final VoidCallback onClearSelection;
   final List<Tile> allTiles;
+  final Map<String, GlobalKey> tileGlobalKeys;
   final double tileSize;
   final bool isCurrentPlayerTurn;
   final int score;
@@ -29,6 +30,7 @@ class PlayerWords extends StatelessWidget {
     required this.potentiallySelectedTileIds,
     required this.onClearSelection,
     required this.allTiles,
+    required this.tileGlobalKeys,
     this.tileSize = 36,
     required this.isCurrentPlayerTurn,
     required this.score,
@@ -75,6 +77,8 @@ class PlayerWords extends StatelessWidget {
           runSpacing: 2.0, // Space between lines
           children: words.map((word) {
             List<Tile> tiles = [];
+            final bool isAnimatingPlaceholder = word['isAnimatingDestinationPlaceholder'] == true;
+
             if (word['tileIds'] is List<dynamic>) {
               tiles = (word['tileIds'] as List<dynamic>)
                   .map((tileId) {
@@ -88,20 +92,25 @@ class PlayerWords extends StatelessWidget {
                   .toList();
             }
 
-            return IntrinsicWidth(
-              child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                  child: WordCard(
-                    tiles: tiles,
-                    currentOwnerUserId: playerId,
-                    onWordTap: (tileIds) {},
-                    playerColors: playerColors,
-                    onClickTile: onClickTile,
-                    officiallySelectedTileIds: officiallySelectedTileIds,
-                    potentiallySelectedTileIds: potentiallySelectedTileIds,
-                    onClearSelection: onClearSelection,
-                    tileSize: tileSize,
-                  )),
+            return Opacity(
+              opacity: isAnimatingPlaceholder ? 0.0 : 1.0,
+              child: IntrinsicWidth(
+                child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
+                    child: WordCard(
+                      key: ValueKey(word['wordId']),
+                      tiles: tiles,
+                      currentOwnerUserId: playerId,
+                      onWordTap: (tileIds) {},
+                      playerColors: playerColors,
+                      onClickTile: onClickTile,
+                      officiallySelectedTileIds: officiallySelectedTileIds,
+                      potentiallySelectedTileIds: potentiallySelectedTileIds,
+                      onClearSelection: onClearSelection,
+                      tileSize: tileSize,
+                    tileGlobalKeys: tileGlobalKeys,
+                    )),
+              ),
             );
           }).toList(),
         ),
