@@ -1,7 +1,6 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_frontend/screens/game_screen.dart';
 import 'package:flutter_frontend/config.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 
@@ -10,7 +9,6 @@ class ApiService {
       {required String username, required Function onGameNotFound}) async {
     if (gameId.isEmpty) return;
     final url = Uri.parse('${Config.backendUrl}/join-game');
-    print("in joinGameApi, username = $username");
     final Map<String, String> payload = {
       'game_id': gameId,
       'username': username
@@ -25,19 +23,14 @@ class ApiService {
           body: jsonEncode(payload));
 
       if (response.statusCode == 200) {
-        var data = jsonDecode(response.body);
-        print("Received Data: $data");
+        jsonDecode(response.body);
 
-        // Navigate to GameScreen and pass gameId
-        Navigator.push(
+        Navigator.pushNamed(
           context,
-          MaterialPageRoute(
-            builder: (context) =>
-                GameScreen(gameId: gameId, username: username),
-          ),
+          '/game/$gameId',
+          arguments: {'username': username},
         );
       } else {
-        print("Error: ${response.statusCode} - ${response.body}");
 
         // Check if the error is about game not found (could be 404 or a specific error message)
         if (response.statusCode == 404 ||
@@ -54,7 +47,6 @@ class ApiService {
         }
       }
     } catch (e) {
-      print("failed to fetch data: $e");
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text('Connection error: $e'),
@@ -79,31 +71,24 @@ class ApiService {
 
       if (response.statusCode == 200) {
         var data = jsonDecode(response.body);
-        print("Received Data: $data");
         final String gameId = data['game_id'];
-        // Navigate to GameScreen and pass gameId
-        Navigator.push(
+        
+        Navigator.pushNamed(
           context,
-          MaterialPageRoute(
-            builder: (context) =>
-                GameScreen(gameId: gameId, username: username),
-          ),
+          '/game/$gameId',
+          arguments: {'username': username}, 
         );
       } else {
-        print("Error: ${response.statusCode} - ${response.body}");
       }
     } catch (e) {
-      print("failed to fetch data: $e");
     }
   }
 
-  Future<void> flipNewTile(String gameId, String token) async {
+  Future<Map<String, dynamic>> flipNewTile(String gameId, String token) async {
     final url = Uri.parse('${Config.backendUrl}/flip-tile');
-    print("Trying to flip a new tile");
     final Map<String, dynamic> payload = {
       'game_id': gameId,
     };
-    print("Payload: $payload");
 
     try {
       final response = await http.post(
@@ -115,14 +100,24 @@ class ApiService {
         body: jsonEncode(payload),
       );
 
+      // Parse the JSON response
+      Map<String, dynamic> responseData = {};
+      if (response.body.isNotEmpty) {
+        responseData = jsonDecode(response.body);
+      }
+
       if (response.statusCode == 200) {
-        print("Tile was flipped successfully");
+        if (responseData['success'] == true) {
+          return {'success': true};
+        } else if (responseData['reason'] == 'no_tiles_left') {
+          return {'success': false, 'reason': 'no_tiles_left'};
+        }
+        return {'success': false};
       } else {
-        print(
-            'Error flipping new tile: ${response.statusCode} - ${response.body}');
+        return {'success': false, 'error': response.body};
       }
     } catch (e) {
-      print('Error making flip new tile request: $e');
+      return {'success': false, 'error': e.toString()};
     }
   }
 
@@ -149,15 +144,11 @@ class ApiService {
       );
 
       if (response.statusCode == 200) {
-        final Map<String, dynamic> responseData = jsonDecode(response.body);
-        print("Response Data: $responseData");
+        jsonDecode(response.body);
       } else {
-        print(
-            'Error sending tileIds: ${response.statusCode} - ${response.body}');
       }
       return response;
     } catch (e) {
-      print('Error sending tileIds: $e');
       rethrow;
     }
   }

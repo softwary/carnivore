@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter_frontend/utils/tile_helpers.dart';
 import 'package:flutter_frontend/widgets/dialogs/update_username_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
@@ -27,7 +28,7 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class GameScreenState extends ConsumerState<GameScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, TileHelpersMixin {
   void _initializeUsernameAndGameContext() {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -692,18 +693,10 @@ class GameScreenState extends ConsumerState<GameScreen>
     return processedPlayerWords;
   }
 
-  String _findTileLocation(List<Tile> allTiles, dynamic tileId) {
-    return allTiles
-            .firstWhere((t) => t.tileId == tileId,
-                orElse: () => Tile(letter: '', tileId: '', location: ''))
-            .location ??
-        '';
-  }
-
   Future<void> _sendTileIds(Map<String, dynamic> gameData) async {
     // Assign locations based on `tileId`
     for (var tile in inputtedLetters) {
-      tile.location = _findTileLocation(allTiles, tile.tileId);
+      tile.location = findTileLocation(tile.tileId);
     }
 
     // Exit early if not enough letters
@@ -820,39 +813,6 @@ class GameScreenState extends ConsumerState<GameScreen>
     } else {}
   }
 
-  void _syncTileIdsWithInputtedLetters() {
-    // 🔄 Create a temporary set to track unique tile assignments
-    Set<String> assignedTileIds = {};
-
-    setState(() {
-      officiallySelectedTileIds.clear();
-
-      for (var tile in inputtedLetters) {
-        if (tile.tileId != 'TBD' && tile.tileId != 'invalid') {
-          // Ensure no duplicate assignments for letters appearing multiple times
-          if (!assignedTileIds.contains(tile.tileId)) {
-            assignedTileIds.add(tile.tileId);
-            officiallySelectedTileIds.add(tile.tileId);
-          } else {
-            // Find an alternative tile ID for this duplicate letter
-            final availableTile = allTiles.firstWhere(
-              (t) =>
-                  t.letter == tile.letter &&
-                  !assignedTileIds.contains(t.tileId.toString()),
-              orElse: () => Tile(letter: '', tileId: '', location: ''),
-            );
-
-            if (availableTile.tileId != '') {
-              tile.tileId = availableTile.tileId.toString();
-              assignedTileIds.add(tile.tileId);
-              officiallySelectedTileIds.add(tile.tileId);
-            } else {}
-          }
-        }
-      }
-    });
-  }
-
   void _handleBackspace() {
     if (inputtedLetters.isNotEmpty) {
       final lastTile = inputtedLetters.removeLast();
@@ -908,45 +868,6 @@ class GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
-  List<Tile> _findAvailableTilesWithThisLetter(String letter) {
-    // Find all tiles that match this letter that are not already in inputtedLetters and not
-    // already in officiallySelectedTileIds or in usedTileIds
-    final availableTiles = allTiles.where((tile) {
-      return tile.letter == letter &&
-          !inputtedLetters
-              .any((inputtedTile) => inputtedTile.tileId == tile.tileId) &&
-          !officiallySelectedTileIds.contains(tile.tileId) &&
-          !usedTileIds.contains(tile.tileId);
-    }).toList();
-    return availableTiles;
-  }
-
-  void _assignLetterToThisTileId(letter, tileId) {
-    setState(() {
-      if (tileId != "TBD" || tileId != "invalid") {
-        officiallySelectedTileIds.add(tileId);
-        inputtedLetters.removeLast();
-        final newTileLocation = allTiles
-            .firstWhere(
-              (t) => t.tileId.toString() == tileId,
-              orElse: () => Tile(letter: '', tileId: '', location: ''),
-            )
-            .location;
-        final newTile =
-            Tile(letter: letter, tileId: tileId, location: newTileLocation);
-        inputtedLetters.add(newTile);
-        // potentiallySelectedTileIds.add(tileId);
-        officiallySelectedTileIds.add(tileId);
-      } else {
-        if (tileId == "invalid") {
-          inputtedLetters.removeLast();
-          inputtedLetters
-              .add(Tile(letter: letter, tileId: tileId, location: ''));
-        }
-      }
-    });
-  }
-
   void _handleLetterTyped(Map<String, dynamic> gameData, String letter) {
     setState(() {
       inputtedLetters.add(Tile(letter: letter, tileId: 'TBD', location: ''));
@@ -954,10 +875,10 @@ class GameScreenState extends ConsumerState<GameScreen>
 
     // Find all tiles that match this letter that are not already in inputtedLetters and not
     // already in officiallySelectedTileIds or in usedTileIds
-    final tilesWithThisLetter = _findAvailableTilesWithThisLetter(letter);
+    final tilesWithThisLetter = findAvailableTilesWithThisLetter(letter);
     // If no tiles match this typed letter
     if (tilesWithThisLetter.isEmpty) {
-      _assignLetterToThisTileId(letter, "invalid");
+      assignLetterToThisTileId(letter, "invalid");
       return;
     }
     // if there is only one tile with this letter, assign it to the selected tile
@@ -982,10 +903,10 @@ class GameScreenState extends ConsumerState<GameScreen>
         tileId = "invalid";
       }
       // final tileId = tilesWithThisLetter.first.tileId.toString();
-      _assignLetterToThisTileId(letter, tileId);
+      assignLetterToThisTileId(letter, tileId);
     } else {
       // Try to assign tileId since there are multiple options
-      _assignTileId(letter, tilesWithThisLetter);
+      assignTileId(letter, tilesWithThisLetter);
     }
     setState(() {
       potentialMatches =
@@ -994,252 +915,9 @@ class GameScreenState extends ConsumerState<GameScreen>
       if (inputtedLetters.length > 1) {
         potentiallySelectedTileIds.addAll(potentialMatches);
         // More than two letters → Start refining
-        _refinePotentialMatches(gameData);
+        refinePotentialMatches(gameData);
       }
     });
-  }
-
-  void _assignTileId(String letter, List<Tile> tilesWithThisLetter) {
-    // If there is only one tile with this letter, assign it to the selected tile
-    if (tilesWithThisLetter.length == 1) {
-      final tileId = tilesWithThisLetter.first.tileId.toString();
-      setState(() {
-        inputtedLetters.removeLast();
-        inputtedLetters.add(Tile(letter: letter, tileId: tileId, location: ''));
-        potentiallySelectedTileIds.add(tileId);
-        officiallySelectedTileIds.add(tileId);
-      });
-      return;
-    }
-    // 🔍 Collect used tile IDs from selected tiles
-    final Set<String> usedTileIds = inputtedLetters
-        .where((tile) => tile.tileId != 'TBD')
-        .map((tile) => tile.tileId.toString())
-        .toSet();
-
-    for (var selectedTile in inputtedLetters) {
-      if (selectedTile.tileId == 'TBD' && selectedTile.letter == letter) {
-        // 🔍 Prioritize middle tiles that have not been used yet
-        final tile = tilesWithThisLetter.firstWhere(
-          (tile) =>
-              tile.location == 'middle' &&
-              !usedTileIds.contains(tile.tileId.toString()),
-          orElse: () => Tile(letter: '', tileId: '', location: ''),
-        );
-
-        final tileId = tile.tileId?.toString();
-        if (tileId != null && tileId != '') {
-          setState(() {
-            selectedTile.tileId = tileId;
-            usedTileIds.add(tileId);
-            officiallySelectedTileIds.add(tileId);
-          });
-        } else {
-          // If no middle tile is found, assign any available tile that has not been used yet
-          final fallbackTile = tilesWithThisLetter.firstWhere(
-            (tile) => !usedTileIds.contains(tile.tileId.toString()),
-            orElse: () => Tile(letter: '', tileId: '', location: ''),
-          );
-
-          final fallbackTileId = fallbackTile.tileId?.toString();
-          if (fallbackTileId != null && fallbackTileId != '') {
-            setState(() {
-              selectedTile.tileId = fallbackTileId;
-              usedTileIds.add(fallbackTileId);
-              officiallySelectedTileIds.add(fallbackTileId);
-            });
-          } else {
-            // Mark this as invalid
-            setState(() {
-              selectedTile.tileId = 'invalid';
-            });
-          }
-        }
-      }
-    }
-  }
-
-  void _reassignTilesToMiddle() {
-    final List<Tile> allMiddleTiles =
-        allTiles.where((tile) => tile.location == 'middle').toList();
-    // if all the letters are already assigned to middle tiles, return
-    // check every single tileId from inputtedLetters and see if the location of that tileId = middle
-    if (inputtedLetters.every((tile) {
-      final tileId = tile.tileId;
-      if (tileId != 'TBD') {
-        final tile = allTiles.firstWhere(
-          (t) => t.tileId.toString() == tileId,
-          orElse: () => Tile(letter: '', tileId: '', location: ''),
-        );
-        return tile.tileId != '' && tile.location == 'middle';
-      }
-      return false; // If tileId is TBD, return false
-    })) {
-      return;
-    }
-    setState(() {
-      for (var selectedTile in inputtedLetters) {
-        // Check each individual selectedTile to see if it is from a non-middle location.
-        // If it is, assign it to the middle tile that matches the letter, that hasn't already
-        // been assigned to another selectedTile
-        if (selectedTile.tileId != 'TBD') {
-          // Check if the tile is from a non-middle location and should be replaced
-          final assignedTile = allTiles.firstWhere(
-            (tile) => tile.tileId.toString() == selectedTile.tileId,
-            orElse: () => Tile(letter: '', tileId: '', location: ''),
-          );
-          // if the tile is already from the middle, skip
-          if (assignedTile.tileId != '' && assignedTile.location == 'middle') {
-            continue;
-          }
-
-          if (assignedTile.tileId != '' && assignedTile.location != 'middle') {
-            // Find a middle tile that matches the letter, that is not already in inputtedLetters
-            final matchingMiddleTile = allMiddleTiles.firstWhere(
-              (middleTile) =>
-                  middleTile.letter == selectedTile.letter &&
-                  !inputtedLetters.any(
-                      (tile) => tile.tileId == middleTile.tileId.toString()),
-              orElse: () => Tile(letter: '', tileId: '', location: ''),
-            );
-
-            if (matchingMiddleTile.tileId != '') {
-              officiallySelectedTileIds.remove(selectedTile.tileId);
-              selectedTile.tileId = matchingMiddleTile.tileId.toString();
-              officiallySelectedTileIds
-                  .add(matchingMiddleTile.tileId.toString());
-            }
-          }
-        }
-      }
-    });
-  }
-
-  Map<String, dynamic> getWordData(
-      Map<String, dynamic> gameData, String wordId) {
-    final word = (gameData['words'] as List).firstWhere(
-      (word) => word['wordId'] == wordId,
-      orElse: () => null,
-    );
-    return word;
-  }
-
-  void _refinePotentialMatches(Map<String, dynamic> gameData) {
-    final String? userId = FirebaseAuth.instance.currentUser?.uid;
-
-    final String typedWord = inputtedLetters.map((tile) => tile.letter).join();
-    final List<String> typedWordLetters = typedWord.split('');
-
-    final Map<String, List<String>> letterToTileIds = {};
-
-    for (var tile in allTiles) {
-      if (tile.letter != null && tile.letter!.isNotEmpty) {
-        letterToTileIds.putIfAbsent(tile.letter!, () => []);
-        letterToTileIds[tile.letter!]!.add(tile.tileId.toString());
-      }
-    }
-
-    final bool allSelectedLettersHaveMiddleMatch =
-        inputtedLetters.every((tile) {
-      final letter = tile.letter;
-      if (letter != null) {
-        return allTiles
-            .where((t) => t.letter == letter && t.location == 'middle')
-            .isNotEmpty;
-      }
-      return false;
-    });
-
-    if (allSelectedLettersHaveMiddleMatch) {
-      _reassignTilesToMiddle();
-    } else {
-      debugPrint("❌ Not all selected letters have a middle match");
-
-      final matchingWords = (gameData['words'] as List).where((word) {
-        // Ensure the word status is valid
-        final String status = (word['status'] as String? ?? '').toLowerCase();
-        if (!status.contains("valid")) {
-          return false;
-        }
-
-        final List<String> wordTileIds = (word['tileIds'] as List<dynamic>)
-            .map((id) => id.toString())
-            .toList();
-
-        final String wordString = wordTileIds.map((tileId) {
-          return allTiles
-              .firstWhere((t) => t.tileId.toString() == tileId,
-                  orElse: () => Tile(letter: '', tileId: '', location: ''))
-              .letter;
-        }).join();
-
-        // Check if every letter of the word exists in typedWordLetters with correct frequency
-        List<String> tempLetters = List.from(typedWordLetters);
-        bool isContained = true;
-        for (var letter in wordString.split('')) {
-          if (tempLetters.contains(letter)) {
-            tempLetters.remove(letter);
-          } else {
-            isContained = false;
-            break;
-          }
-        }
-        return isContained;
-      }).toList();
-      if (matchingWords.isEmpty) {
-      } else {
-        matchingWords.sort((a, b) => b.length.compareTo(a.length));
-
-        // Find first word that is not owned by this user, and assign its tileIds to the selected tiles
-        final matchingWordToUse = matchingWords.firstWhere(
-            (word) => word['current_owner_user_id'] != userId,
-            orElse: () => matchingWords.first);
-        _reassignTilesToWord(gameData, matchingWordToUse['wordId']);
-      }
-      _syncTileIdsWithInputtedLetters();
-    }
-  }
-
-  _reassignTilesToWord(Map<String, dynamic> gameData, String wordId) {
-    // This function should reassign the tileIds of the inputtedLetters to the tileIds of the word with the given wordId
-    final word = getWordData(gameData, wordId);
-    if (word == null) {
-      return;
-    }
-    final List<String> tileIds = (word['tileIds'] as List<dynamic>)
-        .map((tileId) => tileId.toString())
-        .toList();
-
-    setState(() {
-      for (var selectedTile in inputtedLetters) {
-        if (selectedTile.tileId != 'TBD') {
-          final assignedTile = allTiles.firstWhere(
-            (tile) => tile.tileId.toString() == selectedTile.tileId,
-            orElse: () => Tile(letter: '', tileId: '', location: ''),
-          );
-          if (assignedTile.tileId != '' &&
-              tileIds.contains(assignedTile.tileId.toString())) {
-            continue;
-          }
-
-          final matchingWordTile = allTiles.firstWhere(
-            (tile) =>
-                tileIds.contains(tile.tileId.toString()) &&
-                tile.letter == selectedTile.letter &&
-                !inputtedLetters.any((inputtedTile) =>
-                    inputtedTile.tileId == tile.tileId.toString()),
-            orElse: () => Tile(letter: '', tileId: '', location: ''),
-          );
-
-          if (matchingWordTile.tileId != '') {
-            officiallySelectedTileIds.remove(selectedTile.tileId);
-            selectedTile.tileId = matchingWordTile.tileId.toString();
-            officiallySelectedTileIds.add(matchingWordTile.tileId.toString());
-          }
-        }
-      }
-    });
-    _syncTileIdsWithInputtedLetters();
   }
 
   TextSpan _keyStyle(String key) {
@@ -1339,9 +1017,8 @@ class GameScreenState extends ConsumerState<GameScreen>
         final wordsList =
             (rawWords ?? <dynamic>[]).cast<Map<String, dynamic>>();
         // 2) derive the counts
-        final tilesLeftCount = allTiles
-            .where((t) => t.letter == null || t.letter!.isEmpty)
-            .length;
+        final tilesLeftCount =
+            allTiles.where((t) => t.letter == null || t.letter!.isEmpty).length;
         // 3) isolate the “middle” tiles
         middleTiles = allTiles.where((t) => t.location == 'middle').toList();
         // 4) figure out whose turn it is
