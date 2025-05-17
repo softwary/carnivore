@@ -5,6 +5,7 @@ import 'package:flutter_frontend/screens/create_account_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
 import 'package:flutter_frontend/classes/tile.dart';
+import 'dart:math';
 
 class MyHomePage extends StatefulWidget {
   final String title;
@@ -58,8 +59,12 @@ class _MyHomePageState extends State<MyHomePage> {
             ElevatedButton(
               onPressed: () async {
                 await _authService.loginAnonymously();
+                final random = Random();
+                final randomNumber = random.nextInt(90000) + 10000; // Generates a 5-digit number
+                final randomUsername = 'player$randomNumber';
                 setState(() {
                   user = FirebaseAuth.instance.currentUser;
+                  _usernameController.text = randomUsername;
                 });
                 token = await user?.getIdToken();
               },
@@ -71,6 +76,9 @@ class _MyHomePageState extends State<MyHomePage> {
                 await _authService.loginWithGoogle();
                 setState(() {
                   user = FirebaseAuth.instance.currentUser;
+                  if (user?.displayName != null && user!.displayName!.isNotEmpty) {
+                    _usernameController.text = user!.displayName!;
+                  }
                 });
                 token = await user?.getIdToken();
               },
@@ -84,6 +92,9 @@ class _MyHomePageState extends State<MyHomePage> {
                       onCreateAccount: () async {
                         setState(() {
                           user = FirebaseAuth.instance.currentUser;
+                           if (user?.displayName != null && user!.displayName!.isNotEmpty) {
+                            _usernameController.text = user!.displayName!;
+                          }
                         });
                         token = await user?.getIdToken();
                       },
@@ -100,6 +111,7 @@ class _MyHomePageState extends State<MyHomePage> {
                 setState(() {
                   user = null;
                   token = null;
+                  _usernameController.text = ''; // Clear username on logout
                 });
               },
               child: const Text('Logout'),
