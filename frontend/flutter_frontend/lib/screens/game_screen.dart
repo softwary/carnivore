@@ -16,6 +16,7 @@ import 'package:flutter_frontend/services/api_service.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 import 'package:flutter_frontend/classes/game_data_provider.dart';
 import 'package:flutter_frontend/animations/steal_animation.dart';
+import 'package:flutter_frontend/widgets/middle_tiles_grid_widget.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -247,7 +248,6 @@ class GameScreenState extends ConsumerState<GameScreen>
       usedTileIds.clear();
     });
   }
-
 
   List<Map<String, dynamic>> processPlayerWords(
       Map<String, dynamic> players, List<Map<String, dynamic>> words) {
@@ -631,8 +631,7 @@ class GameScreenState extends ConsumerState<GameScreen>
 
         allTiles = tilesJson.cast<Map<String, dynamic>>().map((item) {
           final tile = Tile.fromMap(item);
-          tileGlobalKeys.putIfAbsent(
-              tile.tileId.toString(), () => GlobalKey());
+          tileGlobalKeys.putIfAbsent(tile.tileId.toString(), () => GlobalKey());
           return tile;
         }).toList();
 
@@ -890,9 +889,12 @@ class GameScreenState extends ConsumerState<GameScreen>
                         },
                       ),
                     ),
+
                     const SizedBox(height: 10),
+
                     // Tiles & Game Log Row
                     Expanded(
+                      flex: 2,
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -901,6 +903,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
+                                const SizedBox(height: 5),
                                 Text(
                                   'Tiles ($tilesLeftCount Left):',
                                   style: const TextStyle(
@@ -908,73 +911,26 @@ class GameScreenState extends ConsumerState<GameScreen>
                                     color: Colors.white,
                                   ),
                                 ),
-                                const SizedBox(height: 5),
-                                middleTiles.isEmpty
-                                    ? Expanded(
-                                        child: Text(
-                                          "Flip a tile to begin – it's ${playerIdToUsernameMap[currentPlayerTurn]}'s turn to flip a tile!",
-                                          style: TextStyle(
-                                              fontSize: 16,
-                                              color: Colors.white),
-                                        ),
-                                      )
-                                    : Expanded(
-                                        child: GridView.builder(
-                                          gridDelegate:
-                                              SliverGridDelegateWithFixedCrossAxisCount(
-                                            crossAxisCount:
-                                                constraints.maxWidth > 600
-                                                    ? 12
-                                                    : 8,
-                                            childAspectRatio: 1.0,
-                                            crossAxisSpacing: 1.0,
-                                            mainAxisSpacing: 1.0,
-                                          ),
-                                          itemCount: middleTiles.length,
-                                          itemBuilder: (context, index) {
-                                            if (index >= middleTiles.length) {
-                                              return SizedBox.shrink();
-                                            }
-                                            final tile = middleTiles[index];
-                                            final tileIdStr =
-                                                tile.tileId.toString();
-                                            final isSelected =
-                                                officiallySelectedTileIds
-                                                    .contains(
-                                                        tile.tileId.toString());
-                                            final isHighlighted =
-                                                potentiallySelectedTileIds
-                                                    .contains(
-                                                        tile.tileId.toString());
-                                            return Padding(
-                                              padding:
-                                                  const EdgeInsets.symmetric(
-                                                      horizontal: 1.0),
-                                              child: TileWidget(
-                                                // Ensure tileGlobalKeys[tileIdStr] is THE key
-                                                key: tileGlobalKeys[
-                                                    tileIdStr],
-                                                tile: tile,
-                                                tileSize: tileSize,
-                                                onClickTile:
-                                                    (tile, isSelected) {
-                                                  setState(() {
-                                                    handleTileSelection(
-                                                        tile, isSelected);
-                                                  });
-                                                },
-                                                isSelected: isSelected,
-                                                backgroundColor: isSelected
-                                                    ? Color(0xFF4A148C)
-                                                    : isHighlighted
-                                                        ? Colors.purple
-                                                            .withOpacity(0.25)
-                                                        : Colors.purple,
-                                              ),
-                                            );
-                                          },
-                                        ),
-                                      ),
+                                MiddleTilesGridWidget(
+                                  middleTiles: middleTiles,
+                                  officiallySelectedTileIds:
+                                      officiallySelectedTileIds,
+                                  potentiallySelectedTileIds:
+                                      potentiallySelectedTileIds,
+                                  tileGlobalKeys: tileGlobalKeys,
+                                  tileSize: tileSize,
+                                  onTileSelected: (tile, isSelected) {
+                                    setState(() {
+                                      handleTileSelection(tile, isSelected);
+                                    });
+                                  },
+                                  currentPlayerTurnUsername:
+                                      playerIdToUsernameMap[
+                                              currentPlayerTurn] ??
+                                          'Someone',
+                                  crossAxisCount:
+                                      constraints.maxWidth > 600 ? 12 : 8,
+                                ),
                               ],
                             ),
                           ),
@@ -1039,8 +995,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                       _flipNewTile();
                     }
                   : null,
-              isCurrentUsersTurn:
-                  isCurrentUsersTurn,
+              isCurrentUsersTurn: isCurrentUsersTurn,
               isFlipping: isFlipping,
             ),
           ),
