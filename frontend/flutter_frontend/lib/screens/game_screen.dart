@@ -4,7 +4,6 @@ import 'package:flutter_frontend/widgets/dialogs/update_username_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:firebase_database/firebase_database.dart';
 import 'dart:convert';
 import 'package:flutter_frontend/widgets/game_actions_fab.dart';
 import 'package:flutter_frontend/widgets/dialogs/login_signup_dialog.dart';
@@ -16,6 +15,7 @@ import 'package:flutter_frontend/widgets/player_words.dart';
 import 'package:flutter_frontend/services/api_service.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 import 'package:flutter_frontend/classes/game_data_provider.dart';
+import 'package:flutter_frontend/animations/steal_animation.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -28,7 +28,7 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class GameScreenState extends ConsumerState<GameScreen>
-    with TickerProviderStateMixin, TileHelpersMixin {
+    with TickerProviderStateMixin, TileHelpersMixin, StealAnimationMixin {
   void _initializeUsernameAndGameContext() {
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
@@ -43,17 +43,16 @@ class GameScreenState extends ConsumerState<GameScreen>
   }
 
   Map<String, dynamic>? _previousGameData;
-  final Map<String, GlobalKey> _tileGlobalKeys = {};
-  final Map<String, Offset> _previousTileGlobalPositions = {};
-  final Map<String, Size> _previousTileSizes = {};
+  final Map<String, GlobalKey> tileGlobalKeys = {};
+  final Map<String, Offset> previousTileGlobalPositions = {};
+  final Map<String, Size> previousTileSizes = {};
 
-  final Set<String> _sourceWordIdsForAnimation = {};
-  final Set<String> _destinationWordIdsForAnimation = {};
-  final Set<String> _animatingWordIds = {};
+  final Set<String> sourceWordIdsForAnimation = {};
+  final Set<String> destinationWordIdsForAnimation = {};
+  final Set<String> animatingWordIds = {};
 
   final ApiService _apiService = ApiService();
 
-  late DatabaseReference gameRef;
   String? currentUserId;
   String _currentPlayerUsername = "Loading...";
   bool _isLoadingInitialData = true;
@@ -98,7 +97,6 @@ class GameScreenState extends ConsumerState<GameScreen>
 
     _initializeUsernameAndGameContext();
     currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    gameRef = FirebaseDatabase.instance.ref('games/${widget.gameId}');
     _initializeScreenLogic();
 
     FocusManager.instance.primaryFocus?.unfocus();
@@ -110,7 +108,6 @@ class GameScreenState extends ConsumerState<GameScreen>
         mounted) {
       _authDialogShown = true;
 
-      // now expecting String
       final String? newName = await showDialog<String>(
         context: context,
         barrierDismissible: false,
@@ -251,368 +248,6 @@ class GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
-  void _startStealAnimation({
-    required String? originalWordId,
-    required String newWordId,
-    required List<String> tileIds,
-    required String fromPlayerId,
-    required String toPlayerId,
-    Map<String, Offset>? overrideStartPositions,
-    Map<String, Size>? overrideStartSizes,
-  }) async {
-    if (!mounted) return;
-    if (_animatingWordIds.contains(newWordId)) {
-      return;
-    }
-
-    _animatingWordIds.add(newWordId);
-
-    // Controllers & entries to track for cleanup
-    List<AnimationController> controllers = [];
-    List<OverlayEntry> entries = [];
-    List<Timer> delayTimers = [];
-    bool isAnimationCancelled = false;
-
-    // Capture scroll position at animation start
-    List<ScrollPosition> trackingScrollPositions = [];
-    List<Offset> initialScrollOffsets = [];
-
-    // Find all scroll positions that might affect our tiles
-    void captureScrollPositions() {
-      trackingScrollPositions.clear();
-      initialScrollOffsets.clear();
-
-      // Find scrollable ancestors that could affect our tiles
-      ScrollableState? findScrollableAncestor(BuildContext? context) {
-        if (context == null) return null;
-        return Scrollable.of(context);
-      }
-
-      // Check both "from" and "to" contexts for scrollables
-      for (var tileId in tileIds) {
-        // Check source
-        final sourceKey = _tileGlobalKeys[tileId];
-        if (sourceKey?.currentContext != null) {
-          final scrollable = findScrollableAncestor(sourceKey!.currentContext);
-          if (scrollable != null &&
-              !trackingScrollPositions.contains(scrollable.position)) {
-            trackingScrollPositions.add(scrollable.position);
-            initialScrollOffsets.add(Offset(
-                scrollable.position.pixels,
-                scrollable.axisDirection == AxisDirection.down ||
-                        scrollable.axisDirection == AxisDirection.up
-                    ? scrollable.position.pixels
-                    : 0.0));
-          }
-        }
-
-        // Check destination
-        final destKey = _tileGlobalKeys[tileId];
-        if (destKey?.currentContext != null) {
-          final scrollable = findScrollableAncestor(destKey!.currentContext);
-          if (scrollable != null &&
-              !trackingScrollPositions.contains(scrollable.position)) {
-            trackingScrollPositions.add(scrollable.position);
-            initialScrollOffsets.add(Offset(
-                scrollable.position.pixels,
-                scrollable.axisDirection == AxisDirection.down ||
-                        scrollable.axisDirection == AxisDirection.up
-                    ? scrollable.position.pixels
-                    : 0.0));
-          }
-        }
-      }
-    }
-
-    // Calculates scroll delta from when animation started
-    Offset getScrollDelta(int index) {
-      if (index >= trackingScrollPositions.length) return Offset.zero;
-
-      final scrollPosition = trackingScrollPositions[index];
-      final initialOffset = index < initialScrollOffsets.length
-          ? initialScrollOffsets[index]
-          : Offset.zero;
-
-      final double dx = scrollPosition.axis == Axis.horizontal
-          ? scrollPosition.pixels - initialOffset.dx
-          : 0.0;
-
-      final double dy = scrollPosition.axis == Axis.vertical
-          ? scrollPosition.pixels - initialOffset.dy
-          : 0.0;
-
-      return Offset(dx, dy);
-    }
-
-    // Make sure we have the latest positions captured
-    await WidgetsBinding.instance.endOfFrame;
-    if (!mounted) {
-      _animatingWordIds.remove(newWordId);
-      return;
-    }
-
-    captureScrollPositions();
-
-    final overlay = Overlay.of(context);
-    if (overlay == null) {
-      _animatingWordIds.remove(newWordId);
-      return;
-    }
-
-    final overlayContext = overlay.context;
-    final overlayRenderObject = overlayContext.findRenderObject();
-    if (overlayRenderObject == null) {
-      _animatingWordIds.remove(newWordId);
-      return;
-    }
-
-    void cleanupAnimations() {
-      if (isAnimationCancelled) return;
-      isAnimationCancelled = true;
-
-      for (var timer in delayTimers) {
-        timer.cancel();
-      }
-
-      for (var entry in entries) {
-        try {
-          if (entry.mounted) entry.remove();
-        } catch (e) {}
-      }
-
-      for (var controller in controllers) {
-        try {
-          if (controller.isAnimating) controller.stop();
-          controller.dispose();
-        } catch (e) {}
-      }
-
-      _animatingWordIds.remove(newWordId);
-
-      // After animation completes, update state to show words normally
-      setState(() {
-        _destinationWordIdsForAnimation.remove(newWordId);
-        if (originalWordId != null) {
-          _sourceWordIdsForAnimation.remove(originalWordId);
-        }
-      });
-    }
-
-    for (int i = 0; i < tileIds.length; i++) {
-      final tileId = tileIds[i];
-
-      // Find the tile in allTiles
-      final tileData = allTiles.firstWhere((t) => t.tileId.toString() == tileId,
-          orElse: () => Tile(letter: '', tileId: '', location: ''));
-
-      if (tileData.tileId == '') {
-        continue;
-      }
-
-      // Get start position
-      Offset? startPosition;
-      Size? startSize;
-
-      // Prioritize overrideStartPositions if available for this specific tile.
-      // This covers tiles explicitly captured as "newly added from middle" during _checkForWordTransformations
-      // or tiles from a 'MIDDLE_WORD' action.
-      if (overrideStartPositions != null &&
-          overrideStartPositions.containsKey(tileId)) {
-        startPosition = overrideStartPositions[tileId];
-        startSize =
-            (overrideStartSizes != null) ? overrideStartSizes[tileId] : null;
-      }
-
-      // Fallback to previously captured metrics if override was not available or didn't provide a complete set of metrics.
-      if (startPosition == null || startSize == null) {
-        // Check if either is null to ensure we try the fallback
-        startPosition ??= _previousTileGlobalPositions[tileId];
-        startSize ??= _previousTileSizes[tileId];
-      }
-
-      if (startPosition == null || startSize == null) {
-        continue;
-      }
-
-      // Get the end position (destination tile)
-      final endKey = _tileGlobalKeys[tileId];
-      if (endKey == null || endKey.currentContext == null) {
-        continue;
-      }
-
-      // Growth controller
-      final growController = AnimationController(
-        duration: const Duration(milliseconds: 500),
-        vsync: this,
-      );
-      controllers.add(growController);
-
-      // Growth animation
-      final growAnimation = TweenSequence<double>([
-        TweenSequenceItem(
-            tween: Tween<double>(begin: 1.0, end: 1.5), weight: 50),
-        TweenSequenceItem(
-            tween: Tween<double>(begin: 1.5, end: 1.0), weight: 50),
-      ]).animate(
-          CurvedAnimation(parent: growController, curve: Curves.easeInOut));
-
-      // Movement controller
-      final moveController = AnimationController(
-        duration: const Duration(milliseconds: 600),
-        vsync: this,
-      );
-      controllers.add(moveController);
-
-      // Create the overlay that will track position changes
-      OverlayEntry overlayEntry = OverlayEntry(
-        builder: (context) {
-          // Get latest end position, accounting for scrolling
-          Offset getUpdatedEndPosition() {
-            if (endKey.currentContext == null ||
-                !mounted ||
-                isAnimationCancelled) {
-              return startPosition ??
-                  Offset
-                      .zero; // Fall back to start position if we can't get end
-            }
-
-            final RenderBox? endBox =
-                endKey.currentContext!.findRenderObject() as RenderBox?;
-            if (endBox == null || !endBox.hasSize || !endBox.attached) {
-              return startPosition ?? Offset.zero;
-            }
-
-            try {
-              return endBox.localToGlobal(Offset.zero,
-                  ancestor: overlayRenderObject);
-            } catch (e) {
-              return startPosition ?? Offset.zero;
-            }
-          }
-
-          // Adjust for scroll movement in original position
-          Offset adjustForScroll(Offset basePosition) {
-            Offset scrollAdjustment = Offset.zero;
-
-            // Combine all scroll changes
-            for (int i = 0; i < trackingScrollPositions.length; i++) {
-              final delta = getScrollDelta(i);
-              scrollAdjustment = Offset(scrollAdjustment.dx - delta.dx,
-                  scrollAdjustment.dy - delta.dy);
-            }
-
-            return Offset(basePosition.dx + scrollAdjustment.dx,
-                basePosition.dy + scrollAdjustment.dy);
-          }
-
-          // Current start and end positions, adjusted for scrolling
-          final adjustedStartPosition =
-              adjustForScroll(startPosition ?? Offset.zero);
-          final currentEndPosition = getUpdatedEndPosition();
-
-          // Create movement animation based on current positions
-          final moveAnimation = Tween<Offset>(
-            begin: adjustedStartPosition,
-            end: currentEndPosition,
-          ).animate(CurvedAnimation(
-              parent: moveController, curve: Curves.easeInOutCubic));
-
-          return Stack(
-            children: [
-              // GROWTH PHASE - stays at start position, adjusts for scrolling
-              AnimatedBuilder(
-                animation: growAnimation,
-                builder: (context, child) {
-                  if (moveController.value > 0.0) return SizedBox.shrink();
-
-                  return Positioned(
-                    left: adjustForScroll(startPosition ?? Offset.zero).dx,
-                    top: adjustForScroll(startPosition ?? Offset.zero).dy,
-                    child: Transform.scale(
-                      scale: growAnimation.value,
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: TileWidget(
-                          tile: tileData,
-                          tileSize: startSize?.width ?? 0,
-                          onClickTile: (_, __) {},
-                          isSelected: false,
-                          backgroundColor:
-                              playerColorMap[fromPlayerId] ?? Colors.grey,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-
-              // MOVEMENT PHASE - dynamically updates with current positions
-              AnimatedBuilder(
-                animation: moveAnimation,
-                builder: (context, child) {
-                  if (moveController.value == 0.0) return SizedBox.shrink();
-
-                  final scale = 1.0 +
-                      (0.2 * (1 - (moveController.value - 0.5).abs() * 2));
-
-                  return Positioned(
-                    left: moveAnimation.value.dx,
-                    top: moveAnimation.value.dy,
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: TileWidget(
-                          tile: tileData,
-                          tileSize: startSize?.width ?? 0,
-                          onClickTile: (_, __) {},
-                          isSelected: false,
-                          backgroundColor: Color.lerp(
-                                  playerColorMap[fromPlayerId] ?? Colors.grey,
-                                  playerColorMap[toPlayerId] ?? Colors.purple,
-                                  moveController.value) ??
-                              Colors.purple,
-                        ),
-                      ),
-                    ),
-                  );
-                },
-              ),
-            ],
-          );
-        },
-      );
-
-      entries.add(overlayEntry);
-      overlay.insert(overlayEntry);
-
-      // Stagger animations with delay
-      final timer = Timer(Duration(milliseconds: i * 200), () {
-        if (isAnimationCancelled || !mounted) return;
-
-        growController.forward().then((_) {
-          if (isAnimationCancelled || !mounted) return;
-
-          moveController.forward().then((_) {
-            if (i == tileIds.length - 1) {
-              Timer(Duration(milliseconds: 200), () {
-                if (mounted) cleanupAnimations();
-              });
-            }
-          });
-        });
-      });
-
-      delayTimers.add(timer);
-    }
-
-    // Safety cleanup
-    Timer(Duration(seconds: 5), () {
-      if (!isAnimationCancelled && mounted) {
-        cleanupAnimations();
-      }
-    });
-  }
 
   List<Map<String, dynamic>> processPlayerWords(
       Map<String, dynamic> players, List<Map<String, dynamic>> words) {
@@ -634,7 +269,7 @@ class GameScreenState extends ConsumerState<GameScreen>
 
       if (!status.contains("valid")) continue;
 
-      if (_destinationWordIdsForAnimation.contains(wordId)) {
+      if (destinationWordIdsForAnimation.contains(wordId)) {
         final playerEntry = processedPlayerWords
             .firstWhere((p) => p['playerId'] == ownerId, orElse: () => {});
         if (playerEntry.isNotEmpty) {
@@ -643,7 +278,7 @@ class GameScreenState extends ConsumerState<GameScreen>
           (playerEntry['words'] as List<Map<String, dynamic>>)
               .add(placeholderWord);
         }
-      } else if (!_sourceWordIdsForAnimation.contains(wordId)) {
+      } else if (!sourceWordIdsForAnimation.contains(wordId)) {
         // If it's not a destination and not a source (which are handled from prevData),
         // then it's a normal current word.
         final playerEntry = processedPlayerWords
@@ -666,7 +301,7 @@ class GameScreenState extends ConsumerState<GameScreen>
 
         if (!prevStatus.contains("valid")) continue;
 
-        if (_sourceWordIdsForAnimation.contains(prevWordId)) {
+        if (sourceWordIdsForAnimation.contains(prevWordId)) {
           final playerEntry = processedPlayerWords.firstWhere(
               (p) => p['playerId'] == prevOwnerId,
               orElse: () => {});
@@ -680,7 +315,7 @@ class GameScreenState extends ConsumerState<GameScreen>
       for (var word in words) {
         final status = (word['status'] as String? ?? '').toLowerCase();
         if (status.contains("valid") &&
-            !_destinationWordIdsForAnimation.contains(word['wordId'])) {
+            !destinationWordIdsForAnimation.contains(word['wordId'])) {
           final ownerId = word['current_owner_user_id'];
           final playerEntry = processedPlayerWords
               .firstWhere((p) => p['playerId'] == ownerId, orElse: () => {});
@@ -699,10 +334,8 @@ class GameScreenState extends ConsumerState<GameScreen>
       tile.location = findTileLocation(tile.tileId);
     }
 
-    // Exit early if not enough letters
     if (inputtedLetters.length < 3) return;
 
-    // Convert `tileId` from String to int if needed
     for (var tile in inputtedLetters) {
       if (tile.tileId is String) {
         tile.tileId = int.tryParse(tile.tileId as String) ?? 'invalid';
@@ -818,11 +451,11 @@ class GameScreenState extends ConsumerState<GameScreen>
       final lastTile = inputtedLetters.removeLast();
 
       if (lastTile.tileId == "TBD") {
-        // 🔹 If the tile was typed, find one matching tile to unhighlight
+        // If the tile was typed, find one matching tile to unhighlight
         final String backspacedLetter = lastTile.letter!;
 
         setState(() {
-          // 🔹 Find the first occurrence of this letter in potentiallySelectedTileIds and remove it
+          // Find the first occurrence of this letter in potentiallySelectedTileIds and remove it
           final highlightedTileIdsList = potentiallySelectedTileIds.toList();
           for (int i = 0; i < highlightedTileIdsList.length;) {
             final tileId = highlightedTileIdsList[i];
@@ -838,7 +471,7 @@ class GameScreenState extends ConsumerState<GameScreen>
           }
         });
       } else {
-        // 🔹 If the tile was selected, unselect it
+        // If the tile was selected, unselect it
         final tileId = lastTile.tileId!;
         setState(() {
           officiallySelectedTileIds.remove(tileId);
@@ -847,7 +480,7 @@ class GameScreenState extends ConsumerState<GameScreen>
       }
     }
 
-    setState(() {}); // Force UI refresh
+    setState(() {});
   }
 
   void handleTileSelection(Tile tile, bool isSelected) {
@@ -998,7 +631,7 @@ class GameScreenState extends ConsumerState<GameScreen>
 
         allTiles = tilesJson.cast<Map<String, dynamic>>().map((item) {
           final tile = Tile.fromMap(item);
-          _tileGlobalKeys.putIfAbsent(
+          tileGlobalKeys.putIfAbsent(
               tile.tileId.toString(), () => GlobalKey());
           return tile;
         }).toList();
@@ -1006,9 +639,6 @@ class GameScreenState extends ConsumerState<GameScreen>
         List<Tile> newAllTiles = [];
         for (var item in tilesJson.cast<Map<String, dynamic>>()) {
           final tile = Tile.fromMap(item);
-          // Ensure a key exists for every tile ID that might be displayed
-          // _tileGlobalKeys.putIfAbsent(
-          //     tile.tileId.toString(), () => GlobalKey());
           newAllTiles.add(tile);
         }
         allTiles = newAllTiles;
@@ -1091,7 +721,7 @@ class GameScreenState extends ConsumerState<GameScreen>
 
             if (event is KeyDownEvent) {
               final key = event.logicalKey;
-              final isLetter = key.keyLabel?.length == 1 &&
+              final isLetter = key.keyLabel.length == 1 &&
                   RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
 
               if (isLetter && inputtedLetters.length < 16) {
@@ -1251,7 +881,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                                 potentiallySelectedTileIds,
                             onClearSelection: () {},
                             allTiles: allTiles,
-                            tileGlobalKeys: _tileGlobalKeys,
+                            tileGlobalKeys: tileGlobalKeys,
                             tileSize: tileSize,
                             isCurrentPlayerTurn: isCurrentPlayerTurn,
                             score: score,
@@ -1308,9 +938,6 @@ class GameScreenState extends ConsumerState<GameScreen>
                                             final tile = middleTiles[index];
                                             final tileIdStr =
                                                 tile.tileId.toString();
-                                            // _tileGlobalKeys.putIfAbsent(
-                                            //     tileIdStr, () => GlobalKey());
-
                                             final isSelected =
                                                 officiallySelectedTileIds
                                                     .contains(
@@ -1324,9 +951,9 @@ class GameScreenState extends ConsumerState<GameScreen>
                                                   const EdgeInsets.symmetric(
                                                       horizontal: 1.0),
                                               child: TileWidget(
-                                                // Ensure _tileGlobalKeys[tileIdStr] is THE key
-                                                key: _tileGlobalKeys[
-                                                    tileIdStr], // Use GlobalKey as the widget's key
+                                                // Ensure tileGlobalKeys[tileIdStr] is THE key
+                                                key: tileGlobalKeys[
+                                                    tileIdStr],
                                                 tile: tile,
                                                 tileSize: tileSize,
                                                 onClickTile:
@@ -1409,11 +1036,11 @@ class GameScreenState extends ConsumerState<GameScreen>
                           isFlipping = true;
                         });
                       }
-                      _flipNewTile(); // This method handles game logic and resets isFlipping
+                      _flipNewTile();
                     }
                   : null,
               isCurrentUsersTurn:
-                  isCurrentUsersTurn, // Already present, but good to confirm
+                  isCurrentUsersTurn,
               isFlipping: isFlipping,
             ),
           ),
@@ -1431,28 +1058,25 @@ class GameScreenState extends ConsumerState<GameScreen>
 
   void _capturePreviousTileMetrics() {
     if (!mounted) return;
-    _previousTileGlobalPositions.clear();
-    _previousTileSizes.clear();
+    previousTileGlobalPositions.clear();
+    previousTileSizes.clear();
 
-    final overlayContext = Overlay.of(context)?.context;
-    if (overlayContext == null) {
-      return;
-    }
+    final overlayContext = Overlay.of(context).context;
 
     final RenderObject? overlayRenderObject = overlayContext.findRenderObject();
     if (overlayRenderObject == null) {
       return;
     }
 
-    _tileGlobalKeys.forEach((tileId, key) {
+    tileGlobalKeys.forEach((tileId, key) {
       if (key.currentContext != null && key.currentContext!.mounted) {
         final renderBox = key.currentContext!.findRenderObject() as RenderBox?;
         // Detailed log before attempting to use renderBox
         if (renderBox != null && renderBox.hasSize && renderBox.attached) {
           try {
-            _previousTileGlobalPositions[tileId] = renderBox
+            previousTileGlobalPositions[tileId] = renderBox
                 .localToGlobal(Offset.zero, ancestor: overlayRenderObject);
-            _previousTileSizes[tileId] = renderBox.size;
+            previousTileSizes[tileId] = renderBox.size;
           } catch (e) {}
         }
       }
@@ -1541,13 +1165,13 @@ class GameScreenState extends ConsumerState<GameScreen>
           Map<String, Offset> currentActionOverrideStartPositions = {};
           Map<String, Size> currentActionOverrideStartSizes = {};
           final overlayRenderObjectForCapture =
-              Overlay.of(context)?.context.findRenderObject();
+              Overlay.of(context).context.findRenderObject();
 
           if (overlayRenderObjectForCapture != null) {
             for (String tileIdToCapture in allNewWordTileIds) {
               if (!originalWordTileIds.contains(tileIdToCapture)) {
                 // Tile is new (from middle) for this action
-                final key = _tileGlobalKeys[tileIdToCapture];
+                final key = tileGlobalKeys[tileIdToCapture];
                 if (key != null &&
                     key.currentContext != null &&
                     key.currentContext!.mounted) {
@@ -1577,14 +1201,14 @@ class GameScreenState extends ConsumerState<GameScreen>
               }
             }
           }
-          if (!_destinationWordIdsForAnimation.contains(newWordId)) {
-            _sourceWordIdsForAnimation.add(originalWordId);
-            _destinationWordIdsForAnimation.add(newWordId);
+          if (!destinationWordIdsForAnimation.contains(newWordId)) {
+            sourceWordIdsForAnimation.add(originalWordId);
+            destinationWordIdsForAnimation.add(newWordId);
             animationScheduledThisCheck = true;
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _startStealAnimation(
+                startStealAnimation(
                   originalWordId: originalWordId,
                   newWordId: newWordId,
                   tileIds:
@@ -1611,17 +1235,17 @@ class GameScreenState extends ConsumerState<GameScreen>
             continue;
           }
 
-          if (!_destinationWordIdsForAnimation.contains(newWordId)) {
+          if (!destinationWordIdsForAnimation.contains(newWordId)) {
             // --- CAPTURE MIDDLE TILE POSITIONS NOW ---
             // These are the actual starting positions for tiles coming from the middle.
             Map<String, Offset> currentMiddleTileStartPositions = {};
             Map<String, Size> currentMiddleTileStartSizes = {};
             final overlayRenderObjectForCapture =
-                Overlay.of(context)?.context.findRenderObject();
+                Overlay.of(context).context.findRenderObject();
 
             if (overlayRenderObjectForCapture != null) {
               for (String tileIdToCapture in tileIds) {
-                final key = _tileGlobalKeys[tileIdToCapture];
+                final key = tileGlobalKeys[tileIdToCapture];
                 if (key != null &&
                     key.currentContext != null &&
                     key.currentContext!.mounted) {
@@ -1640,12 +1264,12 @@ class GameScreenState extends ConsumerState<GameScreen>
             }
             // --- END CAPTURE ---
 
-            _destinationWordIdsForAnimation.add(newWordId);
+            destinationWordIdsForAnimation.add(newWordId);
             animationScheduledThisCheck = true;
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
               if (mounted) {
-                _startStealAnimation(
+                startStealAnimation(
                   originalWordId: null,
                   newWordId: newWordId,
                   tileIds: tileIds,
@@ -1664,11 +1288,11 @@ class GameScreenState extends ConsumerState<GameScreen>
 
     if (animationScheduledThisCheck) {
       // This setState triggers a rebuild. In that rebuild:
-      // 1. processPlayerWords uses the updated _sourceWordIdsForAnimation and _destinationWordIdsForAnimation.
+      // 1. processPlayerWords uses the updated sourceWordIdsForAnimation and destinationWordIdsForAnimation.
       //    - Source words come from _previousGameData.
       //    - Destination words come from currentData but are marked as placeholders.
       // 2. PlayerWords renders placeholders for destination words, making their GlobalKeys available.
-      // The _startStealAnimation (post-frame) will then correctly find these keys.
+      // The startStealAnimation (post-frame) will then correctly find these keys.
       // _capturePreviousTileMetrics (called at the start of the build) will have captured metrics
       // from the state *before* this rebuild, which is what the animation needs for start positions.
       setState(() {});
