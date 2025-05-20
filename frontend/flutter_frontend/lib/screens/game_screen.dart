@@ -6,8 +6,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:flutter_frontend/widgets/game_actions_fab.dart';
-import 'package:flutter_frontend/widgets/dialogs/login_signup_dialog.dart';
-import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_frontend/widgets/player_words.dart';
@@ -17,6 +15,8 @@ import 'package:flutter_frontend/classes/game_data_provider.dart';
 import 'package:flutter_frontend/animations/steal_animation.dart';
 import 'package:flutter_frontend/widgets/middle_tiles_grid_widget.dart';
 import 'package:flutter_frontend/widgets/dialogs/game_instructions_dialog_content.dart';
+import 'package:flutter_frontend/widgets/dialogs/login_signup_dialog.dart';
+import 'package:flutter_frontend/widgets/selected_tiles_display.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -620,14 +620,6 @@ class GameScreenState extends ConsumerState<GameScreen>
           tileGlobalKeys.putIfAbsent(tile.tileId.toString(), () => GlobalKey());
           return tile;
         }).toList();
-
-        List<Tile> newAllTiles = [];
-        for (var item in tilesJson.cast<Map<String, dynamic>>()) {
-          final tile = Tile.fromMap(item);
-          newAllTiles.add(tile);
-        }
-        allTiles = newAllTiles;
-
         final rawWords = currentGameData['words'] as List<dynamic>?;
         final wordsList =
             (rawWords ?? <dynamic>[]).cast<Map<String, dynamic>>();
@@ -922,20 +914,19 @@ class GameScreenState extends ConsumerState<GameScreen>
                       style: const TextStyle(fontSize: 16, color: Colors.white),
                     ),
                     Wrap(
-                      spacing: 4.0,
-                      children: inputtedLetters.map((tile) {
-                        return SelectedLetterTile(
-                          tile: tile,
+                      children: [ // Wrap in a list if it's the only child, or remove Wrap if SelectedTilesDisplay handles its own spacing.
+                        SelectedTilesDisplay(
+                          inputtedLetters: inputtedLetters,
                           tileSize: tileSize,
-                          backgroundColor: getBackgroundColor(tile),
-                          onRemove: () {
+                          getTileBackgroundColor: getBackgroundColor,
+                          onRemoveTile: () {
                             setState(() {
                               _handleBackspace();
                             });
                           },
-                        );
-                      }).toList(),
-                    ),
+                        ),
+                      ],
+                    )
                   ],
                 ),
               );
