@@ -7,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'dart:convert';
 import 'package:flutter_frontend/widgets/game_actions_fab.dart';
 import 'package:flutter_frontend/widgets/dialogs/login_signup_dialog.dart';
-import 'package:flutter_frontend/widgets/tile_widget.dart';
 import 'package:flutter_frontend/widgets/selected_letter_tile.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +16,7 @@ import 'package:flutter_frontend/classes/tile.dart';
 import 'package:flutter_frontend/classes/game_data_provider.dart';
 import 'package:flutter_frontend/animations/steal_animation.dart';
 import 'package:flutter_frontend/widgets/middle_tiles_grid_widget.dart';
+import 'package:flutter_frontend/widgets/dialogs/game_instructions_dialog_content.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -553,20 +553,6 @@ class GameScreenState extends ConsumerState<GameScreen>
     });
   }
 
-  TextSpan _keyStyle(String key) {
-    return TextSpan(
-      text: " $key ",
-      style: TextStyle(
-        fontWeight: FontWeight.bold,
-        fontFamily: 'monospace',
-        backgroundColor: Colors.black,
-        color: Colors.white,
-        fontSize: 20,
-        letterSpacing: 1.2,
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     final asyncGameData = ref.watch(gameDataProvider(widget.gameId));
@@ -754,25 +740,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                         builder: (BuildContext context) {
                           return AlertDialog(
                             title: Text("Game Instructions"),
-                            content: RichText(
-                              text: TextSpan(
-                                style: DefaultTextStyle.of(context)
-                                    .style
-                                    .copyWith(
-                                        fontSize: 20, color: Colors.white),
-                                children: [
-                                  TextSpan(text: "Press "),
-                                  _keyStyle("ESC"),
-                                  TextSpan(text: " to deselect tiles\nPress "),
-                                  _keyStyle("Enter"),
-                                  TextSpan(text: " to submit tiles\nPress "),
-                                  _keyStyle("Spacebar"),
-                                  TextSpan(
-                                      text:
-                                          " to flip a tile\nClick a word to select all its tiles"),
-                                ],
-                              ),
-                            ),
+                            content: GameInstructionsDialogContent(),
                             actions: [
                               TextButton(
                                 child: Text("OK"),
