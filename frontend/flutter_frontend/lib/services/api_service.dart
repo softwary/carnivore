@@ -1,57 +1,40 @@
 import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:flutter_frontend/config.dart';
+import 'package:flutter_frontend/classes/config.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 
 class ApiService {
-  Future<void> joinGameApi(BuildContext context, String gameId, String token,
-      {required String username, required Function onGameNotFound}) async {
+ Future<void> joinGameApi({
+    required String gameId,
+    required String token,
+    required String username,
+    required Function onGameNotFound,
+  }) async {
     if (gameId.isEmpty) return;
     final url = Uri.parse('${Config.backendUrl}/join-game');
-    final Map<String, String> payload = {
-      'game_id': gameId,
-      'username': username
-    };
+    final payload = {'game_id': gameId, 'username': username};
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(payload),
+    );
 
-    try {
-      final response = await http.post(url,
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $token',
-          },
-          body: jsonEncode(payload));
+    if (response.statusCode == 200) {
+      return;
+    }
 
-      if (response.statusCode == 200) {
-        jsonDecode(response.body);
-
-        Navigator.pushNamed(
-          context,
-          '/game/$gameId',
-          arguments: {'username': username},
-        );
-      } else {
-
-        // Check if the error is about game not found (could be 404 or a specific error message)
-        if (response.statusCode == 404 ||
-            response.body.contains("not found") ||
-            response.body.contains("doesn't exist")) {
-          onGameNotFound();
-        } else {
-          // Show a generic error for other issues
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('Error joining game: ${response.reasonPhrase}'),
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Connection error: $e'),
-        ),
-      );
+    // handle not‐found
+    if (response.statusCode == 404 ||
+        response.body.contains("not found") ||
+        response.body.contains("doesn't exist")) {
+      onGameNotFound();
+    } else {
+      throw Exception(
+          'Error joining game: ${response.statusCode} ${response.reasonPhrase}');
     }
   }
 

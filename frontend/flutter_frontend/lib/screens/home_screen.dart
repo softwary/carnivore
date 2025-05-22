@@ -17,10 +17,10 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   final TextEditingController _gameIdController =
-      TextEditingController(text: '3051');
+      TextEditingController(text: '');
   final FocusNode _focusNode = FocusNode();
   final TextEditingController _usernameController =
-      TextEditingController(text: 'kim2');
+      TextEditingController(text: '');
   final AuthService _authService = AuthService();
   final ApiService _apiService = ApiService();
   String? token;
@@ -60,7 +60,7 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () async {
                 await _authService.loginAnonymously();
                 final random = Random();
-                final randomNumber = random.nextInt(90000) + 10000; // Generates a 5-digit number
+                final randomNumber = random.nextInt(90000) + 10000; 
                 final randomUsername = 'player$randomNumber';
                 setState(() {
                   user = FirebaseAuth.instance.currentUser;
@@ -225,9 +225,8 @@ The game ends when there are no more tiles left, and the player with the most ti
                       onSubmitted: (value) {
                         if (token != null) {
                           _apiService.joinGameApi(
-                            context,
-                            value.trim(),
-                            token!,
+                            gameId: value.trim(),
+                            token: token!,
                             username: _usernameController.text,
                             onGameNotFound: () {
                               ScaffoldMessenger.of(context).showSnackBar(
@@ -265,18 +264,17 @@ The game ends when there are no more tiles left, and the player with the most ti
                           return;
                         }
 
-                        await _apiService.joinGameApi(
-                          context,
-                          _gameIdController.text,
-                          token!,
+                        _apiService.joinGameApi(
+                          gameId: _gameIdController.text,
+                          token: token!,
                           username: _usernameController.text.trim(),
                           onGameNotFound: () {
-                            ScaffoldMessenger.of(context).showSnackBar(
-                              const SnackBar(
-                                content: Text(
-                                    'Game not found. Please check the game ID and try again.'),
-                              ),
-                            );
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                            content: Text(
+                              'Game not found. Please check the game ID and try again.'),
+                            ),
+                          );
                           },
                         );
                       } else {
@@ -289,7 +287,7 @@ The game ends when there are no more tiles left, and the player with the most ti
                     },
                     child: const Text('Join Game'),
                   ),
-                  const SizedBox(height: 50), // Extra spacing at bottom
+                  const SizedBox(height: 50),
                 ],
               );
             },

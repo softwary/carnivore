@@ -1,10 +1,8 @@
 import 'dart:async';
-import 'package:flutter_frontend/utils/tile_helpers.dart';
 import 'package:flutter_frontend/widgets/dialogs/update_username_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'dart:convert';
 import 'package:flutter_frontend/widgets/game_actions_fab.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +15,8 @@ import 'package:flutter_frontend/widgets/middle_tiles_grid_widget.dart';
 import 'package:flutter_frontend/widgets/dialogs/game_instructions_dialog_content.dart';
 import 'package:flutter_frontend/widgets/dialogs/login_signup_dialog.dart';
 import 'package:flutter_frontend/widgets/selected_tiles_display.dart';
+import 'package:flutter_frontend/controllers/game_auth_controller.dart';
+import 'package:flutter_frontend/controllers/game_controller.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -29,19 +29,8 @@ class GameScreen extends ConsumerStatefulWidget {
 }
 
 class GameScreenState extends ConsumerState<GameScreen>
-    with TickerProviderStateMixin, TileHelpersMixin, StealAnimationMixin {
-  void _initializeUsernameAndGameContext() {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      setState(() {
-        _currentPlayerUsername = user.displayName ?? user.email ?? "Player";
-      });
-    } else {
-      setState(() {
-        _currentPlayerUsername = "Guest";
-      });
-    }
-  }
+    with TickerProviderStateMixin, StealAnimationMixin {
+  final currentUser = FirebaseAuth.instance.currentUser;
 
   Map<String, dynamic>? _previousGameData;
   final Map<String, GlobalKey> tileGlobalKeys = {};
@@ -56,11 +45,7 @@ class GameScreenState extends ConsumerState<GameScreen>
 
   String? currentUserId;
   String _currentPlayerUsername = "Loading...";
-  bool _isLoadingInitialData = true;
-  bool _isAttemptingJoin = false;
-  bool _usernamePromptDialogShown = false;
-  bool _authDialogShown = false;
-  final bool _dialogShown = false;
+  bool _hasRequestedJoin = false;
 
   String currentPlayerTurn = '';
   List<Tile> allTiles = [];
@@ -69,13 +54,6 @@ class GameScreenState extends ConsumerState<GameScreen>
 
   bool isCurrentUsersTurn = false;
   bool isFlipping = false;
-
-  List<Tile> inputtedLetters = [];
-  Set<String> officiallySelectedTileIds = <String>{};
-  Set<String> usedTileIds =
-      {}; // Track used tile IDs to avoid duplicate assignment
-  Set<String> potentiallySelectedTileIds =
-      {}; // Set of tileIds that should be semi-transparent
 
   List<Map<String, dynamic>> playerWords = [];
   List<String> potentialMatches = []; // Possible tiles that match typed input
@@ -95,157 +73,14 @@ class GameScreenState extends ConsumerState<GameScreen>
   @override
   void initState() {
     super.initState();
-
-    _initializeUsernameAndGameContext();
     currentUserId = FirebaseAuth.instance.currentUser?.uid;
-    _initializeScreenLogic();
-
     FocusManager.instance.primaryFocus?.unfocus();
-  }
-
-  Future<void> _showLoginSignUpDialogIfNeeded(BuildContext context) async {
-    if (FirebaseAuth.instance.currentUser == null &&
-        !_authDialogShown &&
-        mounted) {
-      _authDialogShown = true;
-
-      final String? newName = await showDialog<String>(
-        context: context,
-        barrierDismissible: false,
-        builder: (_) => LoginSignUpDialog(gameId: widget.gameId),
-      );
-      _authDialogShown = false;
-
-      if (newName != null && newName.isNotEmpty) {
-        final user = FirebaseAuth.instance.currentUser!;
-
-        await user.updateDisplayName(newName);
-        await user.reload();
-        setState(() {
-          _currentPlayerUsername = newName;
-        });
-
-        final token = await user.getIdToken();
-        if (token != null) {
-          await _attemptToJoinGame(token);
-        }
-      }
-    }
-  }
-
-  Future<void> _initializeScreenLogic() async {
-    if (!mounted) {
-      return;
-    }
-    setState(() => _isLoadingInitialData = true);
-
-    User? user = FirebaseAuth.instance.currentUser;
-
-    if (user == null) {
-      if (!_authDialogShown) {
-        WidgetsBinding.instance.addPostFrameCallback((_) async {
-          await _showLoginSignUpDialogIfNeeded(context);
-          if (mounted) _initializeScreenLogic();
-        });
-      } else {}
-      if (FirebaseAuth.instance.currentUser == null && mounted) {
-        setState(() => _isLoadingInitialData = false);
-      }
-      return;
-    }
-
-    // USER IS LOGGED IN
-    currentUserId = user.uid;
-
-    bool authDisplayNameIsSufficient =
-        user.displayName != null && user.displayName!.trim().isNotEmpty;
-
-    if (authDisplayNameIsSufficient) {
-      _currentPlayerUsername = user.displayName!;
-    } else {
-      // Auth displayName is not sufficient, prompt with UpdateUsernameDialog
-      if (!_usernamePromptDialogShown && mounted) {
-        _usernamePromptDialogShown = true;
-        final String? newUsernameFromUpdateDialog = await showDialog<String>(
-          context: context,
-          barrierDismissible: false,
-          builder: (BuildContext dialogContext) =>
-              UpdateUsernameDialog(currentUser: user),
-        );
-        _usernamePromptDialogShown = false;
-
-        if (newUsernameFromUpdateDialog != null &&
-            newUsernameFromUpdateDialog.isNotEmpty &&
-            mounted) {
-          _currentPlayerUsername = newUsernameFromUpdateDialog;
-        } else if (mounted) {
-          _currentPlayerUsername = "Guest (UpdateCancelled)";
-          // Potentially show error or prevent further action
-        }
-      } else if (_usernamePromptDialogShown) {
-        if (mounted) {
-          setState(() =>
-              _isLoadingInitialData = false); // Allow UI to reflect waiting
-        }
-        return; // Avoid re-triggering while dialog is up
-      }
-    }
-
-    // Fallback if _currentPlayerUsername is still not set properly
-    if (_currentPlayerUsername == "Loading..." && authDisplayNameIsSufficient) {
-      _currentPlayerUsername =
-          user.displayName!; // Ensure it's set if auth display name was good
-    }
-
-    if (mounted) {
-      setState(() {
-        _isLoadingInitialData = false;
-      });
-    }
-  }
-
-  Future<void> _attemptToJoinGame(String token) async {
-    if (mounted) setState(() => _isAttemptingJoin = true);
-    try {
-      await _apiService.joinGameApi(
-        context,
-        widget.gameId,
-        token,
-        username: _currentPlayerUsername,
-        onGameNotFound: () {
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Game not found.')),
-            );
-            if (Navigator.canPop(context)) Navigator.pop(context);
-          }
-        },
-      );
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to join game: $e')),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isAttemptingJoin = false);
-    }
   }
 
   void _updateTurnState(bool newTurnState) {
     if (!mounted) return;
     setState(() {
       isCurrentUsersTurn = newTurnState;
-    });
-  }
-
-  void clearInput() {
-    setState(() {
-      inputtedLetters.clear();
-      potentiallySelectedTileIds.clear();
-      potentialMatches.clear();
-      officiallySelectedTileIds.clear();
-      usedTileIds.clear();
     });
   }
 
@@ -328,98 +163,116 @@ class GameScreenState extends ConsumerState<GameScreen>
     return processedPlayerWords;
   }
 
-  Future<void> _sendTileIds(Map<String, dynamic> gameData) async {
-    // Assign locations based on `tileId`
-    for (var tile in inputtedLetters) {
-      tile.location = findTileLocation(tile.tileId);
+  String _findTileLocation(dynamic tileId) {
+    if (tileId == null) return '';
+    try {
+      return allTiles
+              .firstWhere((t) => t.tileId.toString() == tileId.toString())
+              .location ??
+          '';
+    } catch (e) {
+      return '';
+    }
+  }
+
+  Future<void> _submitWord(Map<String, dynamic> gameData) async {
+    final gameController =
+        ref.read(gameControllerProvider(widget.gameId).notifier);
+    final gameControllerState = ref.read(gameControllerProvider(widget.gameId));
+
+    // Client-side length check
+    if (gameControllerState.inputtedLetters.length < 3) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Word must be at least 3 letters long.")),
+      );
+      return;
     }
 
-    if (inputtedLetters.length < 3) return;
-
-    for (var tile in inputtedLetters) {
-      if (tile.tileId is String) {
-        tile.tileId = int.tryParse(tile.tileId as String) ?? 'invalid';
-      }
-    }
-
-    // Ensure all tiles come from the same location or include 'middle'
-    final distinctLocations =
-        inputtedLetters.map((tile) => tile.location).toSet();
+    // Client-side validation for tile locations
+    // This uses _findTileLocation which relies on `allTiles` processed in GameScreenState
+    final distinctLocations = gameControllerState.inputtedLetters
+        .map((tile) => _findTileLocation(tile.tileId))
+        .toSet();
 
     if (distinctLocations.length > 1 && !distinctLocations.contains('middle')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text("You can't use letters from multiple words")),
+            content: Text(
+                "You can't use letters from multiple words without using the middle.")),
       );
       return;
-      // if the distinct location from a word is using the ENTIRE word, then throw error
     } else if (distinctLocations.length > 1) {
-      // Get the length of the word from the non "middle" location
-      final wordId = distinctLocations.firstWhere(
-        (location) => location != 'middle' && location != '',
-        orElse: () => '',
+      // This logic assumes one of the locations is a wordId from an existing word.
+      final wordIdLocation = distinctLocations.firstWhere(
+        (loc) => loc != 'middle' && loc != null && loc.isNotEmpty,
+        orElse: () => '', // Default to empty string if no such location found
       );
-      // get this word out of gameData
-      final wordData = (gameData['words'] as List).firstWhere(
-        (word) => word['wordId'] == wordId,
-        orElse: () => null,
-      );
-      final wordLength = wordData['tileIds'].length;
-      // if the amount of letters in inputtedLetters with their location = this wordId, does not equal the wordLength, then throw error
-      final inputtedLettersFromWord =
-          inputtedLetters.where((tile) => tile.location == wordId).toList();
-      if (inputtedLettersFromWord.length != wordLength) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-              content: Text("You must use the entire word or none of it")),
-        );
-        return;
+
+      if (wordIdLocation.isNotEmpty) {
+        // Find the word data from gameData
+        final wordsList = gameData['words'] as List<dynamic>?;
+        final wordDataMap = wordsList?.firstWhere(
+          (word) => word is Map && word['wordId'] == wordIdLocation,
+          orElse: () => null, // Return null if not found
+        ) as Map<String, dynamic>?;
+
+        if (wordDataMap != null) {
+          final wordTileIds = wordDataMap['tileIds'] as List<dynamic>? ?? [];
+          final wordLength = wordTileIds.length;
+
+          final inputtedLettersFromWord = gameControllerState.inputtedLetters
+              .where((tile) => _findTileLocation(tile.tileId) == wordIdLocation)
+              .length;
+
+          if (inputtedLettersFromWord != wordLength) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                  content: Text(
+                      "You must use the entire word or none of it when stealing.")),
+            );
+            return;
+          }
+        } else {
+          // This case means a location was found that isn't 'middle' but doesn't match a wordId.
+          // This could be an error or an edge case not fully handled.
+          // For now, we'll let it pass to the controller, which might have more robust validation.
+        }
       }
     }
 
-    // Retrieve user token
-    final token = await FirebaseAuth.instance.currentUser?.getIdToken();
-    if (token == null) {
-      return;
-    }
-
+    // Call the controller to handle the submission
     try {
-      final response =
-          await _apiService.sendTileIds(widget.gameId, token, inputtedLetters);
+      final result = await gameController.submitCurrentWord();
 
-      if (response.statusCode == 200) {
-        final responseData = jsonDecode(response.body);
-        final submissionType = responseData['submission_type'];
-        final submittedWord = responseData['word'];
-
-        // Clear input by default
-        setState(clearInput);
-
-        // Handle specific response cases
-        final errorMessages = {
-          "INVALID_LENGTH": "$submittedWord was too short",
-          "INVALID_NO_MIDDLE":
-              "$submittedWord did not use a letter from the middle",
-          "INVALID_WORD_NOT_IN_DICTIONARY":
-              "$submittedWord is not in the dictionary"
-        };
-
-        if (errorMessages.containsKey(submissionType)) {
-          ScaffoldMessenger.of(context).showSnackBar(
-              SnackBar(content: Text(errorMessages[submissionType]!)));
+      if (result['success'] == true) {
+        final submissionType = result['submission_type'] as String?;
+        final submittedWord = result['word'] as String?;
+        String message = "$submittedWord submitted successfully!";
+        if (submissionType != null && submissionType.isNotEmpty) {
+          message += " ($submissionType)";
         }
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
+        );
+        // The GameController's submitCurrentWord method is expected to call its own clearInput.
       } else {
+        // Handle error SnackBar from controller's message
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-              content:
-                  Text('HTTP ${response.statusCode} - ${response.body} Error')),
+              content: Text(
+                  result['message'] as String? ?? 'Failed to submit word.')),
         );
-        setState(clearInput);
+        // Depending on the error type, the controller might or might not clear input.
+        // If it doesn't, the user can retry.
       }
-    } catch (e) {}
-
-    // Ensure UI is updated after processing
-    setState(clearInput);
+    } catch (e) {
+      // Catch any unexpected errors from the controller call
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('An error occurred: ${e.toString()}')),
+      );
+      // Consider if input should be cleared on such an exception.
+      // gameController.clearInput(); // Optionally
+    }
   }
 
   Future<void> _flipNewTile() async {
@@ -446,137 +299,51 @@ class GameScreenState extends ConsumerState<GameScreen>
     } else {}
   }
 
-  void _handleBackspace() {
-    if (inputtedLetters.isNotEmpty) {
-      final lastTile = inputtedLetters.removeLast();
-
-      if (lastTile.tileId == "TBD") {
-        // If the tile was typed, find one matching tile to unhighlight
-        final String backspacedLetter = lastTile.letter!;
-
-        setState(() {
-          // Find the first occurrence of this letter in potentiallySelectedTileIds and remove it
-          final highlightedTileIdsList = potentiallySelectedTileIds.toList();
-          for (int i = 0; i < highlightedTileIdsList.length;) {
-            final tileId = highlightedTileIdsList[i];
-
-            final tile = allTiles.firstWhere(
-              (t) =>
-                  t.letter == backspacedLetter && t.tileId.toString() == tileId,
-              orElse: () => Tile(letter: '', tileId: '', location: ''),
-            );
-
-            potentiallySelectedTileIds.remove(tile.tileId);
-            break;
-          }
-        });
-      } else {
-        // If the tile was selected, unselect it
-        final tileId = lastTile.tileId!;
-        setState(() {
-          officiallySelectedTileIds.remove(tileId);
-          potentiallySelectedTileIds.remove(tileId);
-        });
-      }
-    }
-
-    setState(() {});
-  }
-
-  void handleTileSelection(Tile tile, bool isSelected) {
-    setState(() {
-      if (isSelected) {
-        // If the tile is not already selected, add it to the selected tiles
-        if (!inputtedLetters
-            .any((inputtedTile) => inputtedTile.tileId == tile.tileId)) {
-          officiallySelectedTileIds.add(tile.tileId.toString());
-          inputtedLetters.add(tile);
-        }
-      } else {
-        officiallySelectedTileIds
-            .remove(tile.tileId.toString()); // Unmark the tile as selected
-        inputtedLetters
-            .removeWhere((inputtedTile) => inputtedTile.tileId == tile.tileId);
-      }
-    });
-  }
-
-  void _handleLetterTyped(Map<String, dynamic> gameData, String letter) {
-    setState(() {
-      inputtedLetters.add(Tile(letter: letter, tileId: 'TBD', location: ''));
-    });
-
-    // Find all tiles that match this letter that are not already in inputtedLetters and not
-    // already in officiallySelectedTileIds or in usedTileIds
-    final tilesWithThisLetter = findAvailableTilesWithThisLetter(letter);
-    // If no tiles match this typed letter
-    if (tilesWithThisLetter.isEmpty) {
-      assignLetterToThisTileId(letter, "invalid");
-      return;
-    }
-    // if there is only one tile with this letter, assign it to the selected tile
-    if (tilesWithThisLetter.length == 1) {
-      // tileId has to be tilesWithThisLetter that is not in inputtedLetters
-      // and not in officiallySelectedTileIds or usedTileIds
-      var tileId = tilesWithThisLetter
-          .firstWhere(
-            (tile) =>
-                !inputtedLetters.any(
-                    (inputtedTile) => inputtedTile.tileId == tile.tileId) &&
-                !officiallySelectedTileIds.contains(tile.tileId) &&
-                !usedTileIds.contains(tile.tileId),
-            orElse: () => Tile(letter: '', tileId: 'invalid', location: ''),
-          )
-          .tileId
-          .toString();
-      // If the tileId is already in inputtedLetters or officiallySelectedTileIds, then it cannot be assigned
-      if (officiallySelectedTileIds.contains(tileId) ||
-          inputtedLetters
-              .any((inputtedTile) => inputtedTile.tileId == tileId)) {
-        tileId = "invalid";
-      }
-      // final tileId = tilesWithThisLetter.first.tileId.toString();
-      assignLetterToThisTileId(letter, tileId);
-    } else {
-      // Try to assign tileId since there are multiple options
-      assignTileId(letter, tilesWithThisLetter);
-    }
-    setState(() {
-      potentialMatches =
-          tilesWithThisLetter.map((tile) => tile.tileId.toString()).toList();
-      // If only one letter has been typed so far
-      if (inputtedLetters.length > 1) {
-        potentiallySelectedTileIds.addAll(potentialMatches);
-        // More than two letters → Start refining
-        refinePotentialMatches(gameData);
-      }
-    });
-  }
-
   @override
   Widget build(BuildContext context) {
     final asyncGameData = ref.watch(gameDataProvider(widget.gameId));
-    if (_isLoadingInitialData &&
-        FirebaseAuth.instance.currentUser == null &&
-        !_authDialogShown) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _initializeScreenLogic();
-      });
-    } else if (_isLoadingInitialData &&
-        FirebaseAuth.instance.currentUser != null &&
-        (FirebaseAuth.instance.currentUser!.displayName == null ||
-            FirebaseAuth.instance.currentUser!.displayName!.isEmpty) &&
-        !_usernamePromptDialogShown) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _initializeScreenLogic();
-      });
-    }
-    final currentUser = FirebaseAuth.instance.currentUser;
+    final authState = ref.watch(gameAuthControllerProvider);
 
-    if (currentUser == null && !_dialogShown) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _showLoginSignUpDialogIfNeeded(context);
+    final gameControllerState =
+        ref.watch(gameControllerProvider(widget.gameId));
+    final gameController =
+        ref.read(gameControllerProvider(widget.gameId).notifier);
+    if (authState.isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (authState.showAuthDialog) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final user = FirebaseAuth.instance.currentUser;
+        String? newName;
+        if (user == null) {
+          newName = await showDialog<String>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => LoginSignUpDialog(gameId: widget.gameId),
+          );
+        } else {
+          newName = await showDialog<String>(
+            context: context,
+            barrierDismissible: false,
+            builder: (_) => UpdateUsernameDialog(currentUser: user),
+          );
+        }
+        if (newName != null && newName.isNotEmpty) {
+          await ref
+              .read(gameAuthControllerProvider.notifier)
+              .updateUsername(newName);
+        }
       });
+      return const SizedBox();
+    }
+    if (!authState.isJoined) {
+      if (authState.username != null && !_hasRequestedJoin) {
+        _hasRequestedJoin = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          ref.read(gameAuthControllerProvider.notifier).joinGame(widget.gameId);
+        });
+      }
+      return const Center(child: CircularProgressIndicator());
     }
     return asyncGameData.when(
       data: (gameDataOrNull) {
@@ -609,8 +376,8 @@ class GameScreenState extends ConsumerState<GameScreen>
         }
 
         // Process current game data (assign to allTiles, playerWords, etc.)
-        this.currentPlayerTurn =
-            currentGameData['currentPlayerTurn'] as String? ?? '';
+        // this.currentPlayerTurn =
+        //     currentGameData['currentPlayerTurn'] as String? ?? '';
         // 1) turn flat JSON into Tile objects
         final rawTiles = currentGameData['tiles'] as List<dynamic>?;
         final tilesJson = rawTiles ?? <dynamic>[];
@@ -701,20 +468,22 @@ class GameScreenState extends ConsumerState<GameScreen>
               final isLetter = key.keyLabel.length == 1 &&
                   RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
 
-              if (isLetter && inputtedLetters.length < 16) {
-                _handleLetterTyped(currentGameData, key.keyLabel.toUpperCase());
+              if (isLetter && gameControllerState.inputtedLetters.length < 16) {
+                // _handleLetterTyped(currentGameData, key.keyLabel.toUpperCase());
+                gameController.handleLetterTyped(key.keyLabel.toUpperCase());
               } else if (key == LogicalKeyboardKey.backspace) {
-                _handleBackspace();
+                gameController.handleBackspace();
               } else if (key == LogicalKeyboardKey.enter) {
-                if (inputtedLetters.isNotEmpty) {
-                  _sendTileIds(currentGameData);
+                if (gameControllerState.inputtedLetters.isNotEmpty) {
+                  _submitWord(currentGameData);
                 } else {
                   _flipNewTile();
                 }
               } else if (key == LogicalKeyboardKey.escape) {
-                setState(() {
-                  clearInput();
-                });
+                // setState(() {
+                //   clearInput();
+                // });
+                gameController.clearInput();
               }
             }
             return KeyEventResult.handled;
@@ -749,59 +518,6 @@ class GameScreenState extends ConsumerState<GameScreen>
               ],
             ),
             body: LayoutBuilder(builder: (context, constraints) {
-              if (_isLoadingInitialData &&
-                  !_authDialogShown &&
-                  !_usernamePromptDialogShown) {
-                // Show loader only if no dialog is active and we are genuinely in initial setup
-                return const Center(
-                    child: CircularProgressIndicator(
-                        key: ValueKey("initial_setup_loader")));
-              }
-
-              if (currentUser == null) {
-                // This state is hit if LoginSignUpDialog was cancelled or not yet shown.
-                // _initializeScreenLogic will trigger the dialog.
-                return const Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text("Please log in or sign up to join the game."),
-                      SizedBox(height: 20),
-                      CircularProgressIndicator(
-                          key: ValueKey("login_prompt_loader_build")),
-                    ],
-                  ),
-                );
-              }
-              // User is logged in (or just logged in), proceed with loading game data.
-              if (_currentPlayerUsername == "Loading..." ||
-                  (_currentPlayerUsername.startsWith("Guest") &&
-                      !_usernamePromptDialogShown)) {
-                // This case implies username setup is pending or failed.
-                // _initializeScreenLogic should handle showing the UpdateUsernameDialog if needed.
-                // If it's already been shown and cancelled, this state persists.
-                return Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const Text("A username is required."),
-                      const SizedBox(height: 10),
-                      ElevatedButton(
-                        onPressed: () {
-                          if (mounted) {
-                            _initializeScreenLogic(); // Re-trigger logic to show dialog
-                          }
-                        },
-                        child: const Text("Set Username"),
-                      ),
-                      const SizedBox(height: 20),
-                      const CircularProgressIndicator(
-                          key: ValueKey("username_pending_loader")),
-                    ],
-                  ),
-                );
-              }
-
               return Padding(
                 padding: const EdgeInsets.all(16.0),
                 child: Column(
@@ -833,12 +549,18 @@ class GameScreenState extends ConsumerState<GameScreen>
                             playerId: playerWordData['playerId'],
                             words: playerWordData['words'],
                             playerColors: playerColorMap,
-                            onClickTile: handleTileSelection,
+                            // onClickTile: handleTileSelection,
+                            // officiallySelectedTileIds:
+                            //     officiallySelectedTileIds,
+                            // potentiallySelectedTileIds:
+                            //     potentiallySelectedTileIds,
+                            // onClearSelection: () {},
+                            onClickTile: gameController.handleTileSelection,
                             officiallySelectedTileIds:
-                                officiallySelectedTileIds,
+                                gameControllerState.officiallySelectedTileIds,
                             potentiallySelectedTileIds:
-                                potentiallySelectedTileIds,
-                            onClearSelection: () {},
+                                gameControllerState.potentiallySelectedTileIds,
+                            onClearSelection: gameController.clearInput,
                             allTiles: allTiles,
                             tileGlobalKeys: tileGlobalKeys,
                             tileSize: tileSize,
@@ -873,17 +595,15 @@ class GameScreenState extends ConsumerState<GameScreen>
                                 ),
                                 MiddleTilesGridWidget(
                                   middleTiles: middleTiles,
-                                  officiallySelectedTileIds:
-                                      officiallySelectedTileIds,
+                                  officiallySelectedTileIds: gameControllerState
+                                      .officiallySelectedTileIds,
                                   potentiallySelectedTileIds:
-                                      potentiallySelectedTileIds,
+                                      gameControllerState
+                                          .potentiallySelectedTileIds,
                                   tileGlobalKeys: tileGlobalKeys,
                                   tileSize: tileSize,
-                                  onTileSelected: (tile, isSelected) {
-                                    setState(() {
-                                      handleTileSelection(tile, isSelected);
-                                    });
-                                  },
+                                  onTileSelected:
+                                      gameController.handleTileSelection,
                                   currentPlayerTurnUsername:
                                       playerIdToUsernameMap[
                                               currentPlayerTurn] ??
@@ -909,39 +629,32 @@ class GameScreenState extends ConsumerState<GameScreen>
                       ),
                     ),
                     const SizedBox(height: 10),
+
                     Text(
                       "Selected Tiles:",
                       style: const TextStyle(fontSize: 16, color: Colors.white),
                     ),
-                    Wrap(
-                      children: [ // Wrap in a list if it's the only child, or remove Wrap if SelectedTilesDisplay handles its own spacing.
-                        SelectedTilesDisplay(
-                          inputtedLetters: inputtedLetters,
-                          tileSize: tileSize,
-                          getTileBackgroundColor: getBackgroundColor,
-                          onRemoveTile: () {
-                            setState(() {
-                              _handleBackspace();
-                            });
-                          },
-                        ),
-                      ],
-                    )
+                    Expanded(
+                      flex: 1,
+                      child: SelectedTilesDisplay(
+                        inputtedLetters: gameControllerState.inputtedLetters,
+                        tileSize: tileSize,
+                        getTileBackgroundColor: getBackgroundColor,
+                        onRemoveTile: () {
+                          gameController.handleBackspace();
+                        },
+                      ),
+                    ),
                   ],
                 ),
               );
             }),
             floatingActionButton: GameActionsFab(
               onClear: () {
-                setState(() {
-                  inputtedLetters.clear();
-                  usedTileIds.clear();
-                  potentiallySelectedTileIds.clear();
-                  officiallySelectedTileIds.clear();
-                });
+                gameController.clearInput();
               },
-              onSend: inputtedLetters.length >= 3
-                  ? () => _sendTileIds(currentGameData)
+              onSend: gameControllerState.inputtedLetters.length >= 3
+                  ? () => _submitWord(currentGameData)
                   : null,
               onFlip: isCurrentUsersTurn && !isFlipping
                   ? () {
