@@ -8,12 +8,14 @@ class MiddleTilesGridWidget extends StatelessWidget {
   final Set<String> potentiallySelectedTileIds;
   final Map<String, GlobalKey> tileGlobalKeys;
   final double tileSize;
-  final Function(Tile tile, bool isSelected) onTileSelected;
+  final Function(Tile, bool) onTileSelected;
   final String currentPlayerTurnUsername;
   final int crossAxisCount;
+  final Map<String, Color> playerColors;
+  final String? selectingPlayerId;
 
   const MiddleTilesGridWidget({
-    super.key,
+    Key? key,
     required this.middleTiles,
     required this.officiallySelectedTileIds,
     required this.potentiallySelectedTileIds,
@@ -21,72 +23,43 @@ class MiddleTilesGridWidget extends StatelessWidget {
     required this.tileSize,
     required this.onTileSelected,
     required this.currentPlayerTurnUsername,
-    this.crossAxisCount = 8,
-  });
+    required this.crossAxisCount,
+    required this.playerColors,
+    this.selectingPlayerId,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    if (middleTiles.isEmpty) {
-      return Expanded(
-        child: Center(
-          child: Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              "Flip a tile to begin – it's $currentPlayerTurnUsername's turn to flip a tile!",
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 16,
-                color: Colors.white,
-                fontWeight: FontWeight.w500,
-              ),
-            ),
-          ),
-        ),
-      );
-    }
-
-    return Expanded(
-      child: GridView.builder(
-        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: crossAxisCount,
-          childAspectRatio: 1.0,
-          crossAxisSpacing: 2.0,
-          mainAxisSpacing: 2.0,
-        ),
-        itemCount: middleTiles.length,
-        itemBuilder: (context, index) {
-          if (index >= middleTiles.length) {
-            return const SizedBox.shrink();
-          }
-
-          final tile = middleTiles[index];
-          final tileIdStr = tile.tileId.toString();
-          final tileKey = tileGlobalKeys[tileIdStr];
-          final isSelected = officiallySelectedTileIds.contains(tileIdStr);
-          final isHighlighted = potentiallySelectedTileIds.contains(tileIdStr) && !isSelected;
-
-          Color backgroundColor;
-          if (isSelected) {
-            backgroundColor = Colors.deepPurple.shade700;
-          } else if (isHighlighted) {
-            backgroundColor = Colors.purple.withOpacity(0.35);
-          } else {
-            backgroundColor = Colors.purple;
-          }
-
-          return Padding(
-            padding: const EdgeInsets.all(1.0),
-            child: TileWidget(
-              key: tileKey,
-              tile: tile,
-              tileSize: tileSize,
-              onClickTile: (t, selectedState) => onTileSelected(t, selectedState),
-              isSelected: isSelected,
-              backgroundColor: backgroundColor,
-            ),
-          );
-        },
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: crossAxisCount,
+        childAspectRatio: 1,
+        crossAxisSpacing: 2,
+        mainAxisSpacing: 2,
       ),
+      itemCount: middleTiles.length,
+      itemBuilder: (context, index) {
+        final tile = middleTiles[index];
+        final tileId = tile.tileId.toString();
+        final isSelected = officiallySelectedTileIds.contains(tileId);
+        final isHighlighted = potentiallySelectedTileIds.contains(tileId);
+
+        final selectingPlayerColor =
+            playerColors[selectingPlayerId] ?? const Color(0xFF4A148C);
+        final tileColor = const Color(0xFF4A148C); // Set default unselected middle tile color to purple
+
+        return TileWidget(
+          key: ValueKey(tileId),
+          tile: tile,
+          globalKey: tileGlobalKeys[tileId],
+          tileSize: tileSize,
+          onClickTile: onTileSelected,
+          isSelected: isSelected,
+          backgroundColor: isSelected ? selectingPlayerColor : tileColor,
+        );
+      },
     );
   }
 }

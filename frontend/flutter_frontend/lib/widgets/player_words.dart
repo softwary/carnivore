@@ -5,6 +5,8 @@ import 'package:flutter_frontend/classes/tile.dart';
 
 class PlayerWords extends StatelessWidget {
   final String playerId;
+  final int playerIndex;
+  final int playerCount;
   final String username;
   final List<Map<String, dynamic>> words;
   final Map<String, Color> playerColors;
@@ -18,8 +20,11 @@ class PlayerWords extends StatelessWidget {
   final bool isCurrentPlayerTurn;
   final int score;
   final int maxScoreToWin;
+  final String? selectingPlayerId;
 
   const PlayerWords({
+    required this.playerIndex,
+    required this.playerCount,
     Key? key,
     required this.username,
     required this.playerId,
@@ -35,49 +40,22 @@ class PlayerWords extends StatelessWidget {
     required this.isCurrentPlayerTurn,
     required this.score,
     required this.maxScoreToWin,
+    this.selectingPlayerId,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final pct =
-        maxScoreToWin > 0 ? (score / maxScoreToWin).clamp(0.0, 1.0) : 0.0;
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        isCurrentPlayerTurn
-            ? Shimmer.fromColors(
-                baseColor: Colors.white,
-                highlightColor: Colors.yellow,
-                child: Text(
-                  '$username ($score)',
-                  style: const TextStyle(fontSize: 16, color: Colors.white),
-                ),
-              )
-            : Text(
-                '$username ($score)',
-                style: const TextStyle(fontSize: 16, color: Colors.white),
-              ),
-        const SizedBox(width: 8),
-        SizedBox(
-          height: 12,
-          width: double.infinity, // fills available width
-          child: ClipRRect(
-            borderRadius: BorderRadius.circular(2),
-            child: LinearProgressIndicator(
-              value: pct,
-              backgroundColor: Colors.grey[700],
-              valueColor: AlwaysStoppedAnimation(Colors.greenAccent),
-            ),
-          ),
-        ),
         const SizedBox(height: 10),
         Wrap(
-          spacing: 2.0, // Space between cards
-          runSpacing: 2.0, // Space between lines
+          spacing: 0.0,
+          runSpacing: 0.0,
           children: words.map((word) {
             List<Tile> tiles = [];
-            final bool isAnimatingPlaceholder = word['isAnimatingDestinationPlaceholder'] == true;
+            final bool isAnimatingPlaceholder =
+                word['isAnimatingDestinationPlaceholder'] == true;
 
             if (word['tileIds'] is List<dynamic>) {
               tiles = (word['tileIds'] as List<dynamic>)
@@ -95,22 +73,20 @@ class PlayerWords extends StatelessWidget {
             return Opacity(
               opacity: isAnimatingPlaceholder ? 0.0 : 1.0,
               child: IntrinsicWidth(
-                child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 2.0),
-                    child: WordCard(
-                      key: ValueKey(word['wordId']),
-                      tiles: tiles,
-                      currentOwnerUserId: playerId,
-                      onWordTap: (tileIds) {},
-                      playerColors: playerColors,
-                      onClickTile: onClickTile,
-                      officiallySelectedTileIds: officiallySelectedTileIds,
-                      potentiallySelectedTileIds: potentiallySelectedTileIds,
-                      onClearSelection: onClearSelection,
-                      tileSize: tileSize,
-                    tileGlobalKeys: tileGlobalKeys,
-                    )),
-              ),
+                  child: WordCard(
+                key: ValueKey(word['wordId']),
+                tiles: tiles,
+                selectingPlayerId: selectingPlayerId,
+                currentOwnerUserId: playerId,
+                onWordTap: (tileIds) {},
+                playerColors: playerColors,
+                onClickTile: onClickTile,
+                officiallySelectedTileIds: officiallySelectedTileIds,
+                potentiallySelectedTileIds: potentiallySelectedTileIds,
+                onClearSelection: onClearSelection,
+                tileSize: tileSize,
+                tileGlobalKeys: tileGlobalKeys,
+              )),
             );
           }).toList(),
         ),

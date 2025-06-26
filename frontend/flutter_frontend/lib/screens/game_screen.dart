@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'package:flutter_frontend/services/overlay_notification_service.dart';
 import 'package:flutter_frontend/widgets/dialogs/update_username_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_frontend/widgets/mobile_game_log_overlay.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_frontend/widgets/game_actions_fab.dart';
 import 'package:flutter_frontend/widgets/game_log.dart';
@@ -17,6 +19,7 @@ import 'package:flutter_frontend/widgets/dialogs/login_signup_dialog.dart';
 import 'package:flutter_frontend/widgets/selected_tiles_display.dart';
 import 'package:flutter_frontend/controllers/game_auth_controller.dart';
 import 'package:flutter_frontend/controllers/game_controller.dart';
+import 'package:flutter_frontend/widgets/territory_bar.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -41,11 +44,11 @@ class GameScreenState extends ConsumerState<GameScreen>
   final Set<String> destinationWordIdsForAnimation = {};
   final Set<String> animatingWordIds = {};
 
-  final ApiService _apiService = ApiService();
-
   String? currentUserId;
   String _currentPlayerUsername = "Loading...";
   bool _hasRequestedJoin = false;
+
+  String? _mobileLogMessage;
 
   String currentPlayerTurn = '';
   List<Tile> allTiles = [];
@@ -163,6 +166,31 @@ class GameScreenState extends ConsumerState<GameScreen>
     return processedPlayerWords;
   }
 
+  // Helper to generate messages for the mobile overlay
+  String _getLogMessageForOverlay(Map<String, dynamic> log) {
+    final username = playerIdToUsernameMap[log['playerId']] ?? 'Someone';
+    final String actionType = log['type'] as String? ?? "Unknown Type";
+    final String? word = log['word'] as String?; // Word string from the action
+    final String? tileLetter = log['tileLetter'] as String?; // For flip_tile
+
+    switch (actionType) {
+      case 'flip_tile':
+        return "$username flipped a ${tileLetter ?? 'tile'}";
+      case 'MIDDLE_WORD':
+        return "$username created '${word ?? 'a word'}' from the middle!";
+      case 'OWN_WORD_IMPROVEMENT':
+        final originalWord = log['originalWordString'] as String?;
+        return "$username improved '${originalWord ?? 'their word'}' to '${word ?? 'a new word'}'!";
+      case 'STEAL_WORD':
+        final robbedId = log['robbedUserId'] as String;
+        final robbedName = playerIdToUsernameMap[robbedId] ?? robbedId;
+        final stolenWord = log['originalWordString'] as String?;
+        return "$username stole '${stolenWord ?? 'a word'}' from $robbedName!";
+      default: // Covers all INVALID types and unknown
+        return "$username: '${word ?? 'Word'}' invalid ($actionType)";
+    }
+  }
+
   String _findTileLocation(dynamic tileId) {
     if (tileId == null) return '';
     try {
@@ -245,25 +273,10 @@ class GameScreenState extends ConsumerState<GameScreen>
       final result = await gameController.submitCurrentWord();
 
       if (result['success'] == true) {
-        final submissionType = result['submission_type'] as String?;
-        final submittedWord = result['word'] as String?;
-        String message = "$submittedWord submitted successfully!";
-        if (submissionType != null && submissionType.isNotEmpty) {
-          message += " ($submissionType)";
-        }
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(message)),
-        );
-        // The GameController's submitCurrentWord method is expected to call its own clearInput.
       } else {
-        // Handle error SnackBar from controller's message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-              content: Text(
-                  result['message'] as String? ?? 'Failed to submit word.')),
-        );
-        // Depending on the error type, the controller might or might not clear input.
-        // If it doesn't, the user can retry.
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                result['message'] as String? ?? 'Failed to submit word.')));
       }
     } catch (e) {
       // Catch any unexpected errors from the controller call
@@ -276,9 +289,10 @@ class GameScreenState extends ConsumerState<GameScreen>
   }
 
   Future<void> _flipNewTile() async {
+    // This is called when Enter is pressed with no selected tiles
     final token = await FirebaseAuth.instance.currentUser!.getIdToken();
     if (token != null) {
-      final result = await _apiService.flipNewTile(widget.gameId, token);
+      final result = await ApiService().flipNewTile(widget.gameId, token);
 
       // Check for no tiles left condition
       if (result['success'] == false && result['reason'] == 'no_tiles_left') {
@@ -313,25 +327,31 @@ class GameScreenState extends ConsumerState<GameScreen>
     }
     if (authState.showAuthDialog) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final user = FirebaseAuth.instance.currentUser;
-        String? newName;
-        if (user == null) {
-          newName = await showDialog<String>(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => LoginSignUpDialog(gameId: widget.gameId),
-          );
-        } else {
-          newName = await showDialog<String>(
-            context: context,
-            barrierDismissible: false,
-            builder: (_) => UpdateUsernameDialog(currentUser: user),
-          );
-        }
-        if (newName != null && newName.isNotEmpty) {
+        if (widget.username != null && widget.username!.isNotEmpty) {
           await ref
               .read(gameAuthControllerProvider.notifier)
-              .updateUsername(newName);
+              .updateUsername(widget.username!);
+        } else {
+          final user = FirebaseAuth.instance.currentUser;
+          String? newName;
+          if (user == null) {
+            newName = await showDialog<String>(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => LoginSignUpDialog(gameId: widget.gameId),
+            );
+          } else {
+            newName = await showDialog<String>(
+              context: context,
+              barrierDismissible: false,
+              builder: (_) => UpdateUsernameDialog(currentUser: user),
+            );
+          }
+          if (newName != null && newName.isNotEmpty) {
+            await ref
+                .read(gameAuthControllerProvider.notifier)
+                .updateUsername(newName);
+          }
         }
       });
       return const SizedBox();
@@ -413,6 +433,16 @@ class GameScreenState extends ConsumerState<GameScreen>
           playerColorMap[entry.key] =
               playerColors[colorIdx++ % playerColors.length];
         }
+
+        // Prepare player scores for the TerritoryBar
+        final List<Map<String, dynamic>> playerScoresForTerritoryBar =
+            playersMap.entries
+                .map((entry) => {
+                      'playerId': entry.key,
+                      'score': entry.value['score'] as int,
+                    })
+                .toList();
+
         // Assign to class member 'playerIdToUsernameMap'
         playerIdToUsernameMap = playerIdToUsername;
         // 6) build & sort playerWords
@@ -433,245 +463,321 @@ class GameScreenState extends ConsumerState<GameScreen>
         var screenSize = MediaQuery.of(context).size;
         final double tileSize = screenSize.width > 600 ? 40 : 25;
         Color getBackgroundColor(Tile tile) {
-          switch (tile.tileId) {
-            case 'invalid':
-              return Colors.red;
-            case 'TBD':
-              return Colors.yellow;
-            case 'valid':
-              return const Color(0xFF4A148C);
-            default:
-              return const Color(0xFF4A148C);
+          // If the tile is part of the currently selected input, use the selecting player's color.
+          // Otherwise, use specific colors for 'invalid'/'TBD' or the default purple.
+          if (gameControllerState.officiallySelectedTileIds
+              .contains(tile.tileId.toString())) {
+            return playerColorMap[currentUserId] ??
+                const Color(0xFF4A148C); // Use player's color
+          } else if (tile.tileId == 'invalid') {
+            return Colors.red;
+          } else if (tile.tileId == 'TBD') {
+            return Colors.yellow;
           }
+          return const Color(0xFF4A148C); // Default for unselected tiles
         }
 
         return Focus(
-          autofocus: true,
-          onKeyEvent: (FocusNode node, KeyEvent event) {
-            if (HardwareKeyboard.instance.isMetaPressed ||
-                HardwareKeyboard.instance.isControlPressed) {
-              if (event.logicalKey == LogicalKeyboardKey.keyR || // Refresh
-                      event.logicalKey ==
-                          LogicalKeyboardKey.keyL || // Focus address bar
-                      event.logicalKey == LogicalKeyboardKey.keyT // New Tab
-                  ) {
-                // If it's a KeyDownEvent, let the browser handle it.
-                if (event is KeyDownEvent) {
-                  return KeyEventResult
-                      .ignored; // Crucial: let browser handle it
+            autofocus: true,
+            onKeyEvent: (FocusNode node, KeyEvent event) {
+              if (HardwareKeyboard.instance.isMetaPressed ||
+                  HardwareKeyboard.instance.isControlPressed) {
+                if (event.logicalKey == LogicalKeyboardKey.keyR || // Refresh
+                        event.logicalKey ==
+                            LogicalKeyboardKey.keyL || // Focus address bar
+                        event.logicalKey == LogicalKeyboardKey.keyT // New Tab
+                    ) {
+                  // If it's a KeyDownEvent, let the browser handle it.
+                  if (event is KeyDownEvent) {
+                    return KeyEventResult
+                        .ignored; // Crucial: let browser handle it
+                  }
                 }
               }
-            }
 
-            if (event is KeyDownEvent) {
-              final key = event.logicalKey;
-              final isLetter = key.keyLabel.length == 1 &&
-                  RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
+              if (event is KeyDownEvent) {
+                final key = event.logicalKey;
+                final isLetter = key.keyLabel.length == 1 &&
+                    RegExp(r'^[a-zA-Z]$').hasMatch(key.keyLabel);
 
-              if (isLetter && gameControllerState.inputtedLetters.length < 16) {
-                // _handleLetterTyped(currentGameData, key.keyLabel.toUpperCase());
-                gameController.handleLetterTyped(key.keyLabel.toUpperCase());
-              } else if (key == LogicalKeyboardKey.backspace) {
-                gameController.handleBackspace();
-              } else if (key == LogicalKeyboardKey.enter) {
-                if (gameControllerState.inputtedLetters.isNotEmpty) {
-                  _submitWord(currentGameData);
-                } else {
-                  _flipNewTile();
+                if (isLetter &&
+                    gameControllerState.inputtedLetters.length < 16) {
+                  // _handleLetterTyped(currentGameData, key.keyLabel.toUpperCase());
+                  gameController.handleLetterTyped(key.keyLabel.toUpperCase());
+                } else if (key == LogicalKeyboardKey.backspace) {
+                  gameController.handleBackspace();
+                } else if (key == LogicalKeyboardKey.enter) {
+                  if (gameControllerState.inputtedLetters.isNotEmpty) {
+                    _submitWord(currentGameData);
+                  } else {
+                    _flipNewTile();
+                  }
+                } else if (key == LogicalKeyboardKey.escape) {
+                  // setState(() {
+                  //   clearInput();
+                  // });
+                  gameController.clearInput();
                 }
-              } else if (key == LogicalKeyboardKey.escape) {
-                // setState(() {
-                //   clearInput();
-                // });
-                gameController.clearInput();
               }
-            }
-            return KeyEventResult.handled;
-          },
-          child: Scaffold(
-            appBar: AppBar(
-              title: Text("Game ${widget.gameId}"),
-              actions: [
-                if (MediaQuery.of(context).size.width > 600)
-                  IconButton(
-                    icon: Icon(Icons.help_outline),
-                    onPressed: () {
-                      showDialog(
-                        context: context,
-                        builder: (BuildContext context) {
-                          return AlertDialog(
-                            title: Text("Game Instructions"),
-                            content: GameInstructionsDialogContent(),
-                            actions: [
-                              TextButton(
-                                child: Text("OK"),
-                                onPressed: () {
-                                  Navigator.of(context).pop();
-                                },
-                              ),
-                            ],
-                          );
-                        },
-                      );
-                    },
-                  ),
-              ],
-            ),
-            body: LayoutBuilder(builder: (context, constraints) {
-              return Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // Player Words
-                    Expanded(
-                      child: ListView.builder(
-                        itemCount: playerWords.length,
-                        itemBuilder: (context, index) {
-                          final playerWordData = playerWords[index];
-                          final isCurrentPlayerTurn =
-                              playerWordData['playerId'] == currentPlayerTurn;
-                          final score = currentGameData['players']
-                                  [playerWordData['playerId']]['score'] ??
-                              0;
-                          final maxScoreToWin =
-                              currentGameData['max_score_to_win_per_player']
-                                  as int;
+              return KeyEventResult.handled;
+            },
+            child: Stack(
+              children: [
+                Scaffold(
+                  // Main Scaffold for the GameScreen
+                  appBar: AppBar(
+                    // On smaller screens (mobile), hide the back button to save space.
+                    automaticallyImplyLeading:
+                        MediaQuery.of(context).size.width > 600,
+                    title: Row(
+                      // Use a Row for flexible layout in the title
+                      children: [
+                        Text(
+                          "Game ${widget.gameId}", // Game ID on the left
+                          style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white),
+                        ),
 
-                          return PlayerWords(
-                            // Pass the animation flag down if PlayerWords/TileWidget needs to know
-                            // For now, PlayerWords will receive words already processed,
-                            // some of which might have 'isAnimatingDestinationPlaceholder'.
-                            // TileWidget within PlayerWords should handle this flag for opacity.
-                            // This is handled by the PlayerWords widget internally by checking the word data.
-                            key: ValueKey(playerWordData['playerId']),
-                            username: playerWordData['username'],
-                            playerId: playerWordData['playerId'],
-                            words: playerWordData['words'],
+                        const SizedBox(width: 16), // Spacing
+                        Expanded(
+                          // Territory Bar in the middle, taking available space
+                          child: TerritoryBar(
+                            playerScores: playerScoresForTerritoryBar,
                             playerColors: playerColorMap,
-                            // onClickTile: handleTileSelection,
-                            // officiallySelectedTileIds:
-                            //     officiallySelectedTileIds,
-                            // potentiallySelectedTileIds:
-                            //     potentiallySelectedTileIds,
-                            // onClearSelection: () {},
-                            onClickTile: gameController.handleTileSelection,
-                            officiallySelectedTileIds:
-                                gameControllerState.officiallySelectedTileIds,
-                            potentiallySelectedTileIds:
-                                gameControllerState.potentiallySelectedTileIds,
-                            onClearSelection: gameController.clearInput,
-                            allTiles: allTiles,
-                            tileGlobalKeys: tileGlobalKeys,
-                            tileSize: tileSize,
-                            isCurrentPlayerTurn: isCurrentPlayerTurn,
-                            score: score,
-                            maxScoreToWin: maxScoreToWin,
-                          );
-                        },
-                      ),
+                            playerUsernames:
+                                playerIdToUsername, // Pass the usernames map
+                          ),
+                        ),
+                        const SizedBox(width: 16), // Spacing
+                        IconButton(
+                          // Game Instructions button on the right
+                          icon: const Icon(Icons.help_outline),
+                          onPressed: () {
+                            showDialog(
+                              context: context,
+                              builder: (BuildContext context) {
+                                return AlertDialog(
+                                  title: const Text("Game Instructions"),
+                                  content:
+                                      const GameInstructionsDialogContent(),
+                                  actions: [
+                                    TextButton(
+                                      onPressed: () {
+                                        Navigator.of(context).pop();
+                                      },
+                                      child: const Text("OK"),
+                                    ),
+                                  ],
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ],
                     ),
+                    // No separate actions needed as they are now part of the title row
+                    actions: [],
+                  ),
 
-                    const SizedBox(height: 10),
-
-                    // Tiles & Game Log Row
-                    Expanded(
-                      flex: 2,
-                      child: Row(
+                  body: LayoutBuilder(// LayoutBuilder for responsive UI
+                      builder: (context, constraints) {
+                    return Padding(
+                      // Padding for the main content area
+                      padding: const EdgeInsets.all(16.0),
+                      child: Column(
+                        // Main column for game content
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
+                          // Player Words section (remains the same)
+
                           Expanded(
-                            flex: 2,
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const SizedBox(height: 5),
-                                Text(
-                                  'Tiles ($tilesLeftCount Left):',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                                MiddleTilesGridWidget(
-                                  middleTiles: middleTiles,
+                            flex: 3,
+                            child: ListView.builder(
+                              itemCount: playerWords.length,
+                              itemBuilder: (context, index) {
+                                final playerWordData = playerWords[index];
+                                final isCurrentPlayerTurn =
+                                    playerWordData['playerId'] ==
+                                        currentPlayerTurn;
+                                final score = currentGameData['players']
+                                        [playerWordData['playerId']]['score'] ??
+                                    0;
+                                final maxScoreToWin = currentGameData[
+                                    'max_score_to_win_per_player'] as int;
+
+                                final playerIndex = index;
+                                final playerCount = playerWords.length;
+                                return PlayerWords(
+                                  // Pass the animation flag down if PlayerWords/TileWidget needs to know
+                                  // For now, PlayerWords will receive words already processed,
+                                  // some of which might have 'isAnimatingDestinationPlaceholder'.
+                                  // TileWidget within PlayerWords should handle this flag for opacity.
+                                  // This is handled by the PlayerWords widget internally by checking the word data.
+                                  key: ValueKey(playerWordData['playerId']),
+                                  username: playerWordData['username'],
+                                  selectingPlayerId: currentUserId,
+                                  playerId: playerWordData['playerId'],
+                                  words: playerWordData['words'],
+                                  playerColors: playerColorMap,
+                                  playerIndex: playerIndex,
+                                  playerCount: playerCount,
+                                  // onClickTile: handleTileSelection,
+                                  // officiallySelectedTileIds:
+                                  //     officiallySelectedTileIds,
+                                  // potentiallySelectedTileIds:
+                                  //     potentiallySelectedTileIds,
+                                  // onClearSelection: () {},
+                                  onClickTile:
+                                      gameController.handleTileSelection,
                                   officiallySelectedTileIds: gameControllerState
                                       .officiallySelectedTileIds,
                                   potentiallySelectedTileIds:
                                       gameControllerState
                                           .potentiallySelectedTileIds,
+                                  onClearSelection: gameController.clearInput,
+                                  allTiles: allTiles,
                                   tileGlobalKeys: tileGlobalKeys,
                                   tileSize: tileSize,
-                                  onTileSelected:
-                                      gameController.handleTileSelection,
-                                  currentPlayerTurnUsername:
-                                      playerIdToUsernameMap[
-                                              currentPlayerTurn] ??
-                                          'Someone',
-                                  crossAxisCount:
-                                      constraints.maxWidth > 600 ? 12 : 8,
+                                  isCurrentPlayerTurn: isCurrentPlayerTurn,
+                                  score: score,
+                                  maxScoreToWin: maxScoreToWin,
+                                );
+                              },
+                            ),
+                          ),
+
+                          const SizedBox(height: 10),
+
+                          // Tiles & Game Log Row
+                          Expanded(
+                            flex: 1,
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Expanded(
+                                  flex: 2,
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      const SizedBox(height: 5),
+                                      Text(
+                                        'Tiles ($tilesLeftCount Left):',
+                                        style: TextStyle(
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.white),
+                                      ),
+                                      MiddleTilesGridWidget(
+                                        middleTiles: middleTiles,
+                                        officiallySelectedTileIds:
+                                            gameControllerState
+                                                .officiallySelectedTileIds,
+                                        potentiallySelectedTileIds:
+                                            gameControllerState
+                                                .potentiallySelectedTileIds,
+                                        tileGlobalKeys: tileGlobalKeys,
+                                        tileSize: tileSize,
+                                        onTileSelected:
+                                            gameController.handleTileSelection,
+                                        playerColors: playerColorMap,
+                                        selectingPlayerId: currentUserId,
+                                        currentPlayerTurnUsername:
+                                            playerIdToUsernameMap[
+                                                    currentPlayerTurn] ??
+                                                'Someone',
+                                        crossAxisCount:
+                                            constraints.maxWidth > 600 ? 12 : 8,
+                                      ),
+                                    ],
+                                  ),
                                 ),
+                                if (MediaQuery.of(context).size.width < 600 &&
+                                    _mobileLogMessage != null)
+                                  Expanded(
+                                    flex: 1,
+                                    child: MobileGameLogOverlay(
+                                      message: _mobileLogMessage!,
+                                      onComplete: () {
+                                        if (mounted) {
+                                          setState(() {
+                                            _mobileLogMessage = null;
+                                          });
+                                        }
+                                      },
+                                      playerColors: playerColorMap,
+                                      playerIdToUsernameMap:
+                                          playerIdToUsernameMap,
+                                    ),
+                                  ),
+                                if (constraints.maxWidth > 600)
+                                  Expanded(
+                                    flex: 1,
+                                    child: GameLog(
+                                        gameId: widget.gameId,
+                                        gameData: currentGameData,
+                                        playerIdToUsernameMap:
+                                            playerIdToUsernameMap,
+                                        tileSize: tileSize,
+                                        playerColors: playerColorMap),
+                                  ),
                               ],
                             ),
                           ),
-                          if (constraints.maxWidth > 600)
-                            const SizedBox(width: 10),
-                          if (constraints.maxWidth > 600)
-                            Expanded(
-                              flex: 1,
-                              child: GameLog(
-                                  gameId: widget.gameId,
-                                  gameData: currentGameData,
-                                  playerIdToUsernameMap: playerIdToUsernameMap,
-                                  tileSize: tileSize),
+                          const SizedBox(height: 10),
+
+                          Text(
+                            "Selected Tiles:",
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white),
+                          ),
+                          Expanded(
+                            flex: 1,
+                            child: Align(
+                              alignment: Alignment.topLeft,
+                              child: SelectedTilesDisplay(
+                                inputtedLetters:
+                                    gameControllerState.inputtedLetters,
+                                tileSize: tileSize,
+                                getTileBackgroundColor: getBackgroundColor,
+                                onRemoveTile: () {
+                                  gameController.handleBackspace();
+                                },
+                              ),
                             ),
+                          ),
                         ],
                       ),
-                    ),
-                    const SizedBox(height: 10),
-
-                    Text(
-                      "Selected Tiles:",
-                      style: const TextStyle(fontSize: 16, color: Colors.white),
-                    ),
-                    Expanded(
-                      flex: 1,
-                      child: SelectedTilesDisplay(
-                        inputtedLetters: gameControllerState.inputtedLetters,
-                        tileSize: tileSize,
-                        getTileBackgroundColor: getBackgroundColor,
-                        onRemoveTile: () {
-                          gameController.handleBackspace();
-                        },
-                      ),
-                    ),
-                  ],
+                    );
+                  }),
+                  floatingActionButton: GameActionsFab(
+                    onClear: () {
+                      gameController.clearInput();
+                    },
+                    onSend: gameControllerState.inputtedLetters.length >= 3
+                        ? () => _submitWord(currentGameData)
+                        : null,
+                    onFlip: isCurrentUsersTurn && !isFlipping
+                        ? () {
+                            // Set isFlipping to true immediately
+                            if (mounted) {
+                              setState(() {
+                                isFlipping = true;
+                              });
+                            }
+                            _flipNewTile();
+                          }
+                        : null,
+                    isCurrentUsersTurn: isCurrentUsersTurn,
+                    isFlipping: isFlipping,
+                  ),
                 ),
-              );
-            }),
-            floatingActionButton: GameActionsFab(
-              onClear: () {
-                gameController.clearInput();
-              },
-              onSend: gameControllerState.inputtedLetters.length >= 3
-                  ? () => _submitWord(currentGameData)
-                  : null,
-              onFlip: isCurrentUsersTurn && !isFlipping
-                  ? () {
-                      // Set isFlipping to true immediately
-                      if (mounted) {
-                        setState(() {
-                          isFlipping = true;
-                        });
-                      }
-                      _flipNewTile();
-                    }
-                  : null,
-              isCurrentUsersTurn: isCurrentUsersTurn,
-              isFlipping: isFlipping,
-            ),
-          ),
-        );
+              ],
+            ));
       },
       loading: () {
         return const Center(
@@ -831,6 +937,17 @@ class GameScreenState extends ConsumerState<GameScreen>
           if (!destinationWordIdsForAnimation.contains(newWordId)) {
             sourceWordIdsForAnimation.add(originalWordId);
             destinationWordIdsForAnimation.add(newWordId);
+
+            // Trigger mobile log overlay for steal/improvement
+            if (MediaQuery.of(context).size.width < 600) {
+              Future.delayed(const Duration(milliseconds: 100), () {
+                OverlayNotificationService.show(context,
+                    message: _getLogMessageForOverlay(action),
+                    playerId: action['playerId'] as String?,
+                    playerColors: playerColorMap,
+                    playerIdToUsernameMap: playerIdToUsernameMap);
+              });
+            }
             animationScheduledThisCheck = true;
 
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -892,6 +1009,16 @@ class GameScreenState extends ConsumerState<GameScreen>
             // --- END CAPTURE ---
 
             destinationWordIdsForAnimation.add(newWordId);
+            // Trigger mobile log overlay for middle word creation
+            if (MediaQuery.of(context).size.width < 600) {
+              Future.delayed(const Duration(milliseconds: 100), () {
+                OverlayNotificationService.show(context,
+                    message: _getLogMessageForOverlay(action),
+                    playerId: action['playerId'] as String?,
+                    playerColors: playerColorMap,
+                    playerIdToUsernameMap: playerIdToUsernameMap);
+              });
+            }
             animationScheduledThisCheck = true;
 
             WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -26,6 +26,8 @@ class TileWidget extends StatefulWidget {
 class _TileWidgetState extends State<TileWidget> {
   @override
   Widget build(BuildContext context) {
+    debugPrint('💜TileWidget: ${widget.tile.letter} (ID: ${widget.tile.tileId?.toString()}) - isSelected: ${widget.isSelected}, backgroundColor: ${widget.backgroundColor}');
+     
     return GestureDetector(
       key: widget.globalKey, 
       onTap: () {
@@ -36,7 +38,7 @@ class _TileWidgetState extends State<TileWidget> {
         height: widget.tileSize,
         padding: const EdgeInsets.all(2.0),
         decoration: BoxDecoration(
-          color: widget.isSelected ? Color(0xFF4A148C) : widget.backgroundColor,
+          color: widget.backgroundColor,
           border: Border.all(
             color: widget.isSelected ? Colors.white : Colors.transparent,
             width: 1.5,

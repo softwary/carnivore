@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/services/auth_service.dart';
 import 'package:flutter_frontend/services/api_service.dart';
-import 'package:flutter_frontend/screens/create_account_screen.dart';
+// import 'package:flutter_frontend/screens/create_account_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
 import 'package:flutter_frontend/classes/tile.dart';
@@ -60,7 +60,7 @@ class _MyHomePageState extends State<MyHomePage> {
               onPressed: () async {
                 await _authService.loginAnonymously();
                 final random = Random();
-                final randomNumber = random.nextInt(90000) + 10000; 
+                final randomNumber = random.nextInt(90000) + 10000;
                 final randomUsername = 'player$randomNumber';
                 setState(() {
                   user = FirebaseAuth.instance.currentUser;
@@ -76,34 +76,36 @@ class _MyHomePageState extends State<MyHomePage> {
                 await _authService.loginWithGoogle();
                 setState(() {
                   user = FirebaseAuth.instance.currentUser;
-                  if (user?.displayName != null && user!.displayName!.isNotEmpty) {
+                  if (user?.displayName != null &&
+                      user!.displayName!.isNotEmpty) {
                     _usernameController.text = user!.displayName!;
                   }
                 });
                 token = await user?.getIdToken();
               },
             ),
-            ElevatedButton(
-              onPressed: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => CreateAccountScreen(
-                      onCreateAccount: () async {
-                        setState(() {
-                          user = FirebaseAuth.instance.currentUser;
-                           if (user?.displayName != null && user!.displayName!.isNotEmpty) {
-                            _usernameController.text = user!.displayName!;
-                          }
-                        });
-                        token = await user?.getIdToken();
-                      },
-                    ),
-                  ),
-                );
-              },
-              child: const Text('Create Account'),
-            ),
+            // ElevatedButton(
+            //   onPressed: () {
+            //     Navigator.push(
+            //       context,
+            //       MaterialPageRoute(
+            //         builder: (context) => CreateAccountScreen(
+            //           onCreateAccount: () async {
+            //             setState(() {
+            //               user = FirebaseAuth.instance.currentUser;
+            //               if (user?.displayName != null &&
+            //                   user!.displayName!.isNotEmpty) {
+            //                 _usernameController.text = user!.displayName!;
+            //               }
+            //             });
+            //             token = await user?.getIdToken();
+            //           },
+            //         ),
+            //       ),
+            //     );
+            //   },
+            //   child: const Text('Create Account'),
+            // ),
           ] else ...[
             ElevatedButton(
               onPressed: () async {
@@ -149,18 +151,25 @@ class _MyHomePageState extends State<MyHomePage> {
 
                   const SizedBox(height: 20),
                   ElevatedButton(
-                    onPressed: () {
+                    onPressed: () async {
                       if (token != null &&
                           _usernameController.text.isNotEmpty) {
-                        _apiService.createGameApi(context, token!,
+                        final gameId = await _apiService.createGameApi(token!,
                             username: _usernameController.text);
-                      } else if (_usernameController.text.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text(
-                                'Enter a username before creating a game!'),
-                          ),
-                        );
+                        if (gameId != null && mounted) {
+                          Navigator.pushNamed(
+                            context,
+                            '/game/$gameId',
+                            arguments: {'username': _usernameController.text},
+                          );
+                        } else if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Failed to create game. Please try again.'),
+                            ),
+                          );
+                        }
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -211,6 +220,7 @@ The game ends when there are no more tiles left, and the player with the most ti
                     child: TextField(
                       controller: _gameIdController,
                       focusNode: _focusNode,
+                      keyboardType: TextInputType.number,
                       decoration: const InputDecoration(
                         labelText: 'Enter Game ID',
                         labelStyle: TextStyle(color: Colors.white),
@@ -264,19 +274,29 @@ The game ends when there are no more tiles left, and the player with the most ti
                           return;
                         }
 
-                        _apiService.joinGameApi(
-                          gameId: _gameIdController.text,
+                        await _apiService.joinGameApi(
+                          gameId: _gameIdController.text.trim(),
                           token: token!,
                           username: _usernameController.text.trim(),
                           onGameNotFound: () {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                            content: Text(
-                              'Game not found. Please check the game ID and try again.'),
-                            ),
-                          );
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text(
+                                    'Game not found. Please check the game ID and try again.'),
+                              ),
+                            );
                           },
                         );
+
+                        if (mounted) {
+                          Navigator.pushNamed(
+                            context,
+                            '/game/${_gameIdController.text.trim()}',
+                            arguments: {
+                              'username': _usernameController.text.trim()
+                            },
+                          );
+                        }
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(
@@ -286,6 +306,38 @@ The game ends when there are no more tiles left, and the player with the most ti
                       }
                     },
                     child: const Text('Join Game'),
+                  ),
+                  const SizedBox(height: 20),
+
+                  ElevatedButton(
+                    onPressed: () async {
+                      if (token != null &&
+                          _usernameController.text.isNotEmpty) {
+                        final gameId = await _apiService.playComputerApi(
+                            token: token!, username: _usernameController.text);
+                        if (gameId != null && mounted) {
+                          Navigator.pushNamed(
+                            context,
+                            '/game/$gameId',
+                            arguments: {'username': _usernameController.text},
+                          );
+                        } else if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text(
+                                  'Failed to create game. Please try again.'),
+                            ),
+                          );
+                        }
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Please log in to create a game.'),
+                          ),
+                        );
+                      }
+                    },
+                    child: const Text('Play the Computer'),
                   ),
                   const SizedBox(height: 50),
                 ],

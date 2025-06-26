@@ -5,43 +5,11 @@ import 'package:flutter_frontend/classes/config.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 
 class ApiService {
- Future<void> joinGameApi({
-    required String gameId,
+  Future<String?> playComputerApi({
     required String token,
     required String username,
-    required Function onGameNotFound,
   }) async {
-    if (gameId.isEmpty) return;
-    final url = Uri.parse('${Config.backendUrl}/join-game');
-    final payload = {'game_id': gameId, 'username': username};
-    final response = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $token',
-      },
-      body: jsonEncode(payload),
-    );
-
-    if (response.statusCode == 200) {
-      return;
-    }
-
-    // handle not‐found
-    if (response.statusCode == 404 ||
-        response.body.contains("not found") ||
-        response.body.contains("doesn't exist")) {
-      onGameNotFound();
-    } else {
-      throw Exception(
-          'Error joining game: ${response.statusCode} ${response.reasonPhrase}');
-    }
-  }
-
-  Future<void> createGameApi(BuildContext context, String token,
-      {required String username}) async {
-    final url = Uri.parse('${Config.backendUrl}/create-game');
-
+    final url = Uri.parse('${Config.backendUrl}/play-computer');
     try {
       final response = await http.post(
         url,
@@ -55,15 +23,76 @@ class ApiService {
       if (response.statusCode == 200) {
         var data = jsonDecode(response.body);
         final String gameId = data['game_id'];
-        
-        Navigator.pushNamed(
-          context,
-          '/game/$gameId',
-          arguments: {'username': username}, 
-        );
-      } else {
+        return gameId;
       }
     } catch (e) {
+      // Handle error, perhaps log it
+      print('Exception during playComputer: $e');
+      return null;
+    }
+  }
+
+  Future<String?> joinGameApi({
+    required String gameId,
+    required String token,
+    required String username,
+    required Function onGameNotFound,
+  }) async {
+    if (gameId.isEmpty) return null;
+    final url = Uri.parse('${Config.backendUrl}/join-game');
+    final payload = {'game_id': gameId, 'username': username};
+    final response = await http.post(
+      url,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer $token',
+      },
+      body: jsonEncode(payload),
+    );
+
+    if (response.statusCode == 200) {
+      // Return the gameId on success so navigation can occur.
+      return gameId;
+    }
+
+    if (response.statusCode == 404 ||
+        response.body.contains("not found") ||
+        response.body.contains("doesn't exist")) {
+      onGameNotFound();
+      return null;
+    } else {
+      throw Exception(
+          'Error joining game: ${response.statusCode} ${response.reasonPhrase}');
+    }
+  }
+
+  Future<String?> createGameApi(String token,
+      {required String username}) async {
+    final url = Uri.parse('${Config.backendUrl}/create-game');
+
+    try {
+      final response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({'username': username, 'game_type': 'regular'}),
+      );
+
+      if (response.statusCode == 200) {
+        var data = jsonDecode(response.body);
+        final String gameId = data['game_id'];
+        return gameId;
+      } else {
+        // Handle error, perhaps log it or throw a more specific exception
+        print('Failed to create game: ${response.statusCode} ${response.body}');
+        return null;
+      }
+    } catch (e) {
+      // Handle error, perhaps log it
+      print('Exception during createGameApi: $e');
+      return null;
     }
   }
 
@@ -128,8 +157,7 @@ class ApiService {
 
       if (response.statusCode == 200) {
         jsonDecode(response.body);
-      } else {
-      }
+      } else {}
       return response;
     } catch (e) {
       rethrow;

@@ -22,8 +22,8 @@ class SelectedTilesDisplay extends StatelessWidget {
       return const SizedBox.shrink(); // Don't show anything if no tiles are selected
     }
     return Wrap(
-      spacing: 4.0,
-      runSpacing: 4.0, // Added for better layout if tiles wrap to multiple lines
+      spacing: 2.0, // Standardized spacing for selected tiles
+      runSpacing: 2.0,
       children: inputtedLetters.map((tile) {
         return SelectedLetterTile(
           // It's good practice to provide a key if the list items can change

@@ -166,6 +166,11 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
       final endKey = _gs.tileGlobalKeys[tileId];
       if (endKey == null || endKey.currentContext == null) continue;
 
+      // Determine the starting color for the animation based on origin
+      final Color animationStartColor = (originalWordId == null)
+          ? (_gs.playerColorMap[toPlayerId] ?? Colors.purple) // If from middle, start with target player's color
+          : (_gs.playerColorMap[fromPlayerId] ?? Colors.grey); // If from a player, start with their color
+
       final growController = AnimationController(
         duration: const Duration(milliseconds: 500),
         vsync: this,
@@ -236,7 +241,7 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
                           tileSize: startSize?.width ?? 0,
                           onClickTile: (_, __) {},
                           isSelected: false,
-                          backgroundColor: _gs.playerColorMap[fromPlayerId] ?? Colors.grey,
+                          backgroundColor: animationStartColor, // Use the determined start color
                         ),
                       ),
                     ),
@@ -261,7 +266,7 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
                           onClickTile: (_, __) {},
                           isSelected: false,
                           backgroundColor: Color.lerp(
-                            _gs.playerColorMap[fromPlayerId] ?? Colors.grey,
+                            animationStartColor, // Animate from the determined start color
                             _gs.playerColorMap[toPlayerId] ?? Colors.purple,
                             moveController.value,
                           ) ?? Colors.purple,

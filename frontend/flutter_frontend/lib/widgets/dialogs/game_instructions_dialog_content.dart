@@ -34,6 +34,14 @@ class GameInstructionsDialogContent extends StatelessWidget {
           _keyStyle("Spacebar", context),
           const TextSpan(
               text: " to flip a tile\nClick a word to select all its tiles"),
+          const TextSpan(
+              text: """\nRWordivore is a word game played with 2+ players. There are 144 face-down letter tiles in the middle.  
+Players take turns flipping over a tile to create words. The first player to type out a valid English word  
+using the flipped tile gets to keep the letters in their word. Players can steal words by creating an anagram  
+using the existing letters.  
+
+The game ends when there are no more tiles left, and the player with the most tiles wins!"""
+          ),
         ],
       ),
     );

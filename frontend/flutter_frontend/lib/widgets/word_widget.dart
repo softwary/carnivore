@@ -13,6 +13,7 @@ class WordCard extends StatefulWidget {
   final VoidCallback onClearSelection;
   final double tileSize;
   final Map<String, GlobalKey> tileGlobalKeys;
+  final String? selectingPlayerId;
 
   const WordCard({
     Key? key,
@@ -26,6 +27,7 @@ class WordCard extends StatefulWidget {
     required this.onClearSelection,
     required this.tileSize,
     required this.tileGlobalKeys,
+    this.selectingPlayerId,
   }) : super(key: key);
 
   @override
@@ -53,7 +55,7 @@ class _WordCardState extends State<WordCard> {
         widget.onWordTap(widget.tiles.map((tile) => tile.tileId).toList());
       },
       child: Card(
-        margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+        margin: const EdgeInsets.all(2.0), // Standardized margin for word cards
         color: ownerColor.withOpacity(0.2),
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(8),
@@ -76,12 +78,14 @@ class _WordCardState extends State<WordCard> {
                         .map<Widget>((tile) {
                       final tileId = tile.tileId?.toString() ?? "";
                       final tileOwner = widget.currentOwnerUserId;
-                      final tileColor =
-                          widget.playerColors[tileOwner] ?? Colors.black;
+                      final tileColor = widget.playerColors[tileOwner] ?? Colors.black;
                       final isSelected =
                           widget.officiallySelectedTileIds.contains(tileId);
                       final isHighlighted =
                           widget.potentiallySelectedTileIds.contains(tileId);
+                      final selectingPlayerColor =
+                          widget.playerColors[widget.selectingPlayerId] ??
+                              const Color(0xFF4A148C);
 
                       return Padding(
                         padding: const EdgeInsets.symmetric(
@@ -94,7 +98,7 @@ class _WordCardState extends State<WordCard> {
                           onClickTile: widget.onClickTile,
                           isSelected: isSelected,
                           backgroundColor: isSelected
-                              ? Color(0xFF4A148C)
+                              ? selectingPlayerColor
                               : isHighlighted
                                   ? tileColor.withOpacity(0.25)
                                   : tileColor,
