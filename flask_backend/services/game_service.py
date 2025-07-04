@@ -49,270 +49,6 @@ def add_game_action(current_data, game_id: str, action: dict):
         f"[add_game_action] Added action {action_id} to game {game_id}")
 
 
-# def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
-#     """Submits a word (new, improved, or stolen) within a transaction.
-
-#     This function handles the submission of a word in a game. It identifies the type of submission
-#     (new word, improvement of own word, or stealing another player's word) and processes it accordingly
-#     within a transaction.
-
-#     Args:
-#         game_id (str): The ID of the game.
-#         user_id (str): The ID of the user submitting the word.
-#         tile_ids (list[int]): A list of tile IDs used to form the word.
-
-#     Returns:
-#         dict: A dictionary containing the success status and a message. If successful, it also includes
-#               the type of submission.
-#     """
-#     game_ref = firebase_service.get_db_reference(f'games/{game_id}')
-
-#     submission_type_str = None  # Store submission type for response
-#     word = None  # Store submitted word for response
-
-#     def transaction_update(current_data):
-#         nonlocal submission_type_str, word  # ✅ Allow modification outside the transaction
-#         points_to_add_to_user_id = 0
-#         points_to_remove_from_robbed_user = 0
-#         robbed_user_id = ''
-#         winner_found = False
-
-#         if not current_data:
-#             raise GameNotFoundError(f"Game with ID {game_id} not found.")
-
-#         # Check for winner by seeing if this submitting player has max score they need
-#         max_score_to_win_per_player = current_data.get(
-#             'max_score_to_win_per_player')
-
-#         # ✅ Step 1: Identify Submission Type INSIDE the Transaction
-#         submission_type, extra_data = identifyWordSubmissionType(
-#             current_data, user_id, tile_ids)
-#         submission_type_str = submission_type.name
-
-#         # ✅ Step 2: Construct the Submitted Word
-#         tiles = [tile_service.get_tile_from_data(
-#             current_data, tile_id) for tile_id in tile_ids]
-#         tiles.sort(key=lambda t: tile_ids.index(t['tileId']))
-#         word = ''.join(tile['letter']
-#                        for tile in tiles if tile and 'letter' in tile)
-
-#         # Handle invalid submissions
-#         if submission_type in (
-#             WordSubmissionType.INVALID_UNKNOWN_WHY,
-#             WordSubmissionType.INVALID_LENGTH,
-#             WordSubmissionType.INVALID_NO_MIDDLE,
-#             WordSubmissionType.INVALID_LETTERS_USED,
-#             WordSubmissionType.INVALID_WORD_NOT_IN_DICTIONARY,
-#         ):
-#             add_game_action(current_data, game_id, {
-#                 'type': submission_type_str,
-#                 'playerId': user_id,
-#                 'timestamp': int(datetime.now().timestamp() * 1000),
-#                 'word': word,
-#                 'tileIds': tile_ids
-#             })
-#             logger.debug(
-#                 f"[submit_word] Invalid word submission logged: {word}")
-#             return current_data  # ✅ Only return modified game data
-
-#         # ✅ Step 3: Process Valid Word Submissions
-#         word_id = str(uuid.uuid4())
-
-#         word_data = {
-#             'wordId': word_id,
-#             'word': word,
-#             'tileIds': tile_ids,
-#             'status': "valid",
-#             'current_owner_user_id': user_id,
-#             'word_history': []
-#         }
-#         # Get the amount of tileIds that are from the middle
-#         middle_tile_ids = [tile['tileId']
-#                            for tile in tiles if tile['location'] == 'middle']
-#         amount_of_middle_tiles_in_word = len(middle_tile_ids)
-#         print("there are this amount of middle tiles in the word:",
-#               amount_of_middle_tiles_in_word)
-
-#         if submission_type == WordSubmissionType.MIDDLE_WORD:
-#             word_data['word_history'].append({
-#                 'word': word,
-#                 'timestamp': int(datetime.now().timestamp() * 1000),
-#                 'status': "valid",
-#                 'tileIds': tile_ids,
-#                 'playerId': user_id
-#             })
-#             current_data.setdefault('words', []).append(word_data)
-#             points_to_add_to_user_id = len(tile_ids)
-#             logger.debug(f"[submit_word] Middle word added: {word_data}")
-
-#         elif submission_type == WordSubmissionType.OWN_WORD_IMPROVEMENT:
-#             old_word_id = extra_data[0]
-#             old_word_index = next((index for (index, w) in enumerate(
-#                 current_data['words']) if w['wordId'] == old_word_id), None)
-#             if old_word_index is not None:
-#                 old_word = current_data['words'][old_word_index]
-#                 old_word_history = old_word.get('word_history', [])
-#                 old_word_history.append({
-#                     'word': old_word['word'],
-#                     'timestamp': int(datetime.now().timestamp() * 1000),
-#                     'status': "valid",
-#                     'tileIds': old_word['tileIds'],
-#                     'playerId': old_word['user_id']
-#                 })
-#                 word_data['word_history'] = old_word_history
-#                 current_data['words'][old_word_index] = word_data
-#                 points_to_add_to_user_id = amount_of_middle_tiles_in_word
-#                 logger.debug(
-#                     f"[submit_word] Own word improvement: {word_data}")
-
-#         elif submission_type == WordSubmissionType.STEAL_WORD:
-#             stolen_word_ids = extra_data
-#             for stolen_word_id in stolen_word_ids:
-#                 stolen_word_index = next((index for (index, w) in enumerate(
-#                     current_data['words']) if w["wordId"] == stolen_word_id), None)
-#                 if stolen_word_index is not None:
-#                     stolen_word = current_data['words'][stolen_word_index]
-#                     stolen_word_history = stolen_word.get('word_history', [])
-#                     stolen_word_history.append({
-#                         'word': stolen_word['word'],
-#                         'timestamp': int(datetime.now().timestamp() * 1000),
-#                         'status': "stolen",
-#                         'tileIds': stolen_word['tileIds'],
-#                         'playerId': stolen_word['current_owner_user_id']
-#                     })
-#                     word_data['word_history'].extend(stolen_word_history)
-#                     current_data['words'].pop(stolen_word_index)
-#                     logger.debug(
-#                         f"[submit_word] Stolen word history updated: {stolen_word_history}")
-#             print(
-#                 "👀 STEAL_WORD...points_to_add_to_user_id = len(tile_ids)= ", len(tile_ids))
-#             points_to_add_to_user_id = len(tile_ids)
-#             robbed_user_id = stolen_word['current_owner_user_id']
-#             # remove the amount of tiles that are in stolen word
-#             points_to_remove_from_robbed_user = len(stolen_word['tileIds'])
-#             current_data.setdefault('words', []).append(word_data)
-#             logger.debug(f"[submit_word] Stolen word added: {word_data}")
-
-#         else:
-#             logger.error(
-#                 f"[submit_word] Unexpected submission type: {submission_type}")
-#             return None
-
-#         # 5. Update Tile Locations
-#         for tile in tiles:
-#             if tile and 'tileId' in tile:
-#                 tile_id = tile['tileId']
-#                 tile_index = next((index for (index, d) in enumerate(
-#                     current_data['tiles']) if d["tileId"] == tile_id), None)
-#                 if tile_index is not None:
-#                     current_data['tiles'][tile_index]['location'] = word_id
-#                 else:
-#                     logger.error(
-#                         f"[submit_word] Tile ID {tile_id} not found in current data.")
-#                     return None
-
-#         # 6. Update Player Score for submitting player & (optionally) robbed user
-#         submitting_player_data = current_data['players'].get(user_id)
-#         if submitting_player_data:
-#             submitting_player_data['score'] = (submitting_player_data.get(
-#                 'score', 0) or 0) + points_to_add_to_user_id
-#             current_data['players'][user_id] = submitting_player_data
-#             logger.debug(
-#                 f"[submit_word] Player score updated: {submitting_player_data['score']}")
-#             # Check for winner
-#             if submitting_player_data['score'] >= max_score_to_win_per_player:
-#                 winner_found = True
-#                 current_data['status'] = 'winnerFound'
-#                 current_data['winner'] = submitting_player_data
-#                 logger.debug(
-#                     f"🎉 [submit_word] Player {user_id} has reached the winning score: {submitting_player_data['score']}")
-#         else:
-#             logger.error(
-#                 f"[submit_word] Player ID {user_id} not found in current data.")
-#             return None
-#         # Remove points from player getting robbed
-
-#         if (robbed_user_id != ''):
-#             print(
-#                 "about to remove points from a robbed user...the robbed_user_id = ", robbed_user_id)
-#             robbed_player_data = current_data['players'].get(robbed_user_id)
-#             if robbed_player_data:
-#                 robbed_player_original_score = (
-#                     robbed_player_data.get('score', 0) or 0)
-#                 print("👀 STEAL_WORD...robbing this user= ", robbed_user_id,
-#                       " whose score is currently (Before steal)=", robbed_player_data.get('score'))
-#                 print("👀 STEAL_WORD...about to remove this many pts from the user: ",
-#                       points_to_remove_from_robbed_user)
-#                 # Set their new score
-#                 robbed_player_data['score'] = robbed_player_original_score - \
-#                     points_to_remove_from_robbed_user
-#                 current_data['players'][robbed_user_id] = robbed_player_data
-
-#                 print("👀 STEAL_WORD...their score is now=",
-#                       robbed_player_data['score'])
-#                 logger.debug(
-#                     f"[submit_word] Player score updated: {robbed_player_data['score']}")
-#             else:
-#                 logger.error(
-#                     f"[submit_word] Player ID {user_id} not found in current data.")
-#                 return None
-#         # 7. Advance Turn if the word is valid
-#         if not winner_found and submission_type in (
-#             WordSubmissionType.MIDDLE_WORD,
-#             WordSubmissionType.OWN_WORD_IMPROVEMENT,
-#             WordSubmissionType.STEAL_WORD,
-#         ):
-#             current_data['currentPlayerTurn'] = user_id
-#             for player_id, player_data in current_data['players'].items():
-#                 player_data['turn'] = (player_id == user_id)
-#                 logger.debug(f"[submit_word] Player turn set to: {user_id}")
-
-#         # 8. Add Game Action
-#         action = {
-#             'type': submission_type.name,
-#             'playerId': user_id,
-#             'timestamp': int(datetime.now().timestamp() * 1000),
-#             'wordId': word_id,
-#             'word': word,
-#             'tileIds': tile_ids
-#         }
-#         print("👀 action..should just have the above fields... = ", action)
-#         if submission_type == WordSubmissionType.STEAL_WORD:
-#             action['robbedUserId'] = robbed_user_id
-#             action['stolenWord'] = stolen_word['word']
-#             print("👀👀👀 STEAL_WORD action...word that was stolen=",
-#                   action['stolenWord'])
-#             print(
-#                 "👀👀👀 STEAL_WORD action... should have robbedUserId, stolenWord ", action)
-#         elif submission_type == WordSubmissionType.OWN_WORD_IMPROVEMENT:
-#             action['originalWord'] = old_word['word']
-#             print("👀👀👀 OWN_WORD_IMPROVEMENT action... should have originlWord ", action)
-
-#         add_game_action(current_data, game_id, action)
-#         logger.debug(
-#             f"[submit_word] Game action added: {submission_type.name}")
-
-#         return current_data
-#     try:
-#         result = game_ref.transaction(transaction_update)
-#         return {
-#             'success': True,
-#             'message': 'Word submitted successfully',
-#             'submission_type': submission_type_str,  # ✅ Send precomputed value
-#             'word': word  # ✅ Send submitted word
-#         }
-#     except db.TransactionAbortedError as e:
-#         logger.error(f"Transaction failed for game ID {game_id}: {e}")
-#         return {'success': False, 'message': 'Word submission failed'}
-#     except GameNotFoundError as e:
-#         logger.error(f"Game not found: {e}")
-#         return {'success': False, 'message': str(e)}
-#     except Exception as e:
-#         logger.error(f"An unexpected error occurred: {e}")
-#         return {'success': False, 'message': str(e)}
-
-
-
 def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
     """Submits a word (new, improved, or stolen) within a transaction.
 
@@ -346,20 +82,20 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
         if not current_data:
             raise GameNotFoundError(f"Game with ID {game_id} not found.")
 
-        max_score_to_win_per_player = current_data.get('max_score_to_win_per_player')
+        max_score_to_win_per_player = current_data.get(
+            'max_score_to_win_per_player')
 
         submission_type, extra_data = identifyWordSubmissionType(
             current_data, user_id, tile_ids)
         submission_type_str = submission_type.name
-        
+
         tiles_for_word = [tile_service.get_tile_from_data(
             current_data, tile_id) for tile_id in tile_ids]
         tiles_for_word.sort(key=lambda t: tile_ids.index(t['tileId']))
-        
-        current_word_string = ''.join(tile['letter']
-                               for tile in tiles_for_word if tile and 'letter' in tile)
-        submitted_word_str = current_word_string
 
+        current_word_string = ''.join(tile['letter']
+                                      for tile in tiles_for_word if tile and 'letter' in tile)
+        submitted_word_str = current_word_string
 
         if submission_type in (
             WordSubmissionType.INVALID_UNKNOWN_WHY,
@@ -419,8 +155,8 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
 
             if old_word_index is not None:
                 old_word_ref = current_data['words'][old_word_index]
-                primary_original_word_for_action = {'word': old_word_ref['word'], 'wordId': old_word_ref['wordId']}
-
+                primary_original_word_for_action = {
+                    'word': old_word_ref['word'], 'wordId': old_word_ref['wordId']}
 
                 # 1. Update the old word
                 old_word_ref['status'] = "improved_upon_by_owner"
@@ -451,17 +187,19 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 logger.debug(
                     f"[submit_word] Own word improvement: Old word '{old_word_ref['word']}' ({old_word_id}) status updated. New word '{current_word_string}' ({new_word_id}) added.")
             else:
-                logger.error(f"❌ [submit_word] OWN_WORD_IMPROVEMENT: Original word {old_word_id} not found.")
+                logger.error(
+                    f"❌ [submit_word] OWN_WORD_IMPROVEMENT: Original word {old_word_id} not found.")
                 # Decide if this should abort or be logged as an anomaly
-                return None # Abort transaction
+                return None  # Abort transaction
 
         elif submission_type == WordSubmissionType.STEAL_WORD:
-            stolen_word_ids_from_extra = extra_data # A list of words that can be stolen
-            
+            stolen_word_ids_from_extra = extra_data  # A list of words that can be stolen
+
             # The first word in the list is the word that should be stolen, since that player has the highest score
             if not stolen_word_ids_from_extra:
-                logger.error("[submit_word] STEAL_WORD: No stolen_word_ids provided in extra_data.")
-                return None # Abort
+                logger.error(
+                    "[submit_word] STEAL_WORD: No stolen_word_ids provided in extra_data.")
+                return None  # Abort
 
             # Link to the first stolen word for `previousWordId` on the new word object.
             # The action log can list all original IDs.
@@ -479,11 +217,12 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 if stolen_word_index is not None:
                     stolen_word_ref = current_data['words'][stolen_word_index]
 
-                    if i == 0: # Capture details from the primary stolen word
+                    if i == 0:  # Capture details from the primary stolen word
                         temp_robbed_user_id = stolen_word_ref['current_owner_user_id']
-                        temp_robbed_word_tile_count = len(stolen_word_ref['tileIds'])
-                        primary_stolen_word_for_action = {'word': stolen_word_ref['word'], 'wordId': stolen_word_ref['wordId']}
-
+                        temp_robbed_word_tile_count = len(
+                            stolen_word_ref['tileIds'])
+                        primary_stolen_word_for_action = {
+                            'word': stolen_word_ref['word'], 'wordId': stolen_word_ref['wordId']}
 
                     # 1. Update the stolen word
                     stolen_word_ref['status'] = "stolen"
@@ -499,12 +238,15 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                         'becameWordId': new_word_id,
                         'becameWordString': current_word_string
                     })
-                    logger.debug(f"[submit_word] Stolen word '{stolen_word_ref['word']}' ({stolen_word_id_iteration}) status updated.")
+                    logger.debug(
+                        f"[submit_word] Stolen word '{stolen_word_ref['word']}' ({stolen_word_id_iteration}) status updated.")
                 else:
-                    logger.warning(f"[submit_word] STEAL_WORD: Stolen word {stolen_word_id_iteration} not found. Continuing if others exist.")
-            
+                    logger.warning(
+                        f"[submit_word] STEAL_WORD: Stolen word {stolen_word_id_iteration} not found. Continuing if others exist.")
+
             if temp_robbed_user_id is None:
-                logger.error("❌ [submit_word] STEAL_WORD: Could not determine robbed user ID from stolen words.")
+                logger.error(
+                    "❌ [submit_word] STEAL_WORD: Could not determine robbed user ID from stolen words.")
                 return None
 
             robbed_user_id_for_action = temp_robbed_user_id
@@ -521,9 +263,10 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
                 'stoleFromPrimaryWordString': primary_stolen_word_for_action.get('word', '')
             })
             current_data.setdefault('words', []).append(new_word_data)
-            
+
             points_to_add_to_user_id = len(tile_ids)
-            logger.debug(f"[submit_word] New word '{current_word_string}' ({new_word_id}) from steal added.")
+            logger.debug(
+                f"[submit_word] New word '{current_word_string}' ({new_word_id}) from steal added.")
 
         else:
             logger.error(
@@ -531,40 +274,51 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
             return None
 
         # 5. Update Tile Locations to the new_word_id
-        for tile_obj in tiles_for_word: # Use the fetched tile objects
+        for tile_obj in tiles_for_word:  # Use the fetched tile objects
             if tile_obj and 'tileId' in tile_obj:
                 tile_id_to_update = tile_obj['tileId']
                 tile_index_in_gamedata = next((index for (index, d) in enumerate(
                     current_data['tiles']) if d["tileId"] == tile_id_to_update), None)
                 if tile_index_in_gamedata is not None:
-                    current_data['tiles'][tile_index_in_gamedata]['location'] = new_word_id # Use new_word_id
+                    # Use new_word_id
+                    current_data['tiles'][tile_index_in_gamedata]['location'] = new_word_id
                 else:
                     logger.error(
                         f"[submit_word] Tile ID {tile_id_to_update} not found in current data for location update.")
                     return None
-        
+
         # 6. Update Player Score
         submitting_player_data = current_data['players'].get(user_id)
         if submitting_player_data:
-            submitting_player_data['score'] = (submitting_player_data.get('score', 0) or 0) + points_to_add_to_user_id
-            logger.debug(f"[submit_word] Player {user_id} score updated to: {submitting_player_data['score']}")
+            submitting_player_data['score'] = (submitting_player_data.get(
+                'score', 0) or 0) + points_to_add_to_user_id
+            logger.debug(
+                f"[submit_word] Player {user_id} score updated to: {submitting_player_data['score']}")
             if max_score_to_win_per_player and submitting_player_data['score'] >= max_score_to_win_per_player:
                 winner_found = True
                 current_data['status'] = 'winnerFound'
-                current_data['winner'] = {'userId': user_id, 'username': submitting_player_data.get('username',''), 'score': submitting_player_data['score']}
-                logger.debug(f"🎉 [submit_word] Player {user_id} has reached the winning score: {submitting_player_data['score']}")
+                current_data['winner'] = {'userId': user_id, 'username': submitting_player_data.get(
+                    'username', ''), 'score': submitting_player_data['score']}
+                logger.debug(
+                    f"🎉 [submit_word] Player {user_id} has reached the winning score: {submitting_player_data['score']}")
         else:
-            logger.error(f"[submit_word] Submitting player ID {user_id} not found.")
+            logger.error(
+                f"[submit_word] Submitting player ID {user_id} not found.")
             return None
 
         if robbed_user_id_for_action and points_to_remove_from_robbed_user > 0:
-            robbed_player_data = current_data['players'].get(robbed_user_id_for_action)
+            robbed_player_data = current_data['players'].get(
+                robbed_user_id_for_action)
             if robbed_player_data:
-                robbed_player_original_score = (robbed_player_data.get('score', 0) or 0)
-                robbed_player_data['score'] = robbed_player_original_score - points_to_remove_from_robbed_user
-                logger.debug(f"[submit_word] Robbed player {robbed_user_id_for_action} score updated to: {robbed_player_data['score']}")
+                robbed_player_original_score = (
+                    robbed_player_data.get('score', 0) or 0)
+                robbed_player_data['score'] = robbed_player_original_score - \
+                    points_to_remove_from_robbed_user
+                logger.debug(
+                    f"[submit_word] Robbed player {robbed_user_id_for_action} score updated to: {robbed_player_data['score']}")
             else:
-                logger.error(f"[submit_word] Robbed player ID {robbed_user_id_for_action} not found.")
+                logger.error(
+                    f"[submit_word] Robbed player ID {robbed_user_id_for_action} not found.")
                 # Decide if this should abort. For now, continue.
 
         # 7. Advance Turn
@@ -583,18 +337,23 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
             'type': submission_type.name,
             'playerId': user_id,
             'timestamp': int(datetime.now().timestamp() * 1000),
-            'wordId': new_word_id, # ID of the word state created by this action
-            'word': current_word_string, # The actual word string formed
+            'wordId': new_word_id,  # ID of the word state created by this action
+            'word': current_word_string,  # The actual word string formed
             'tileIds': tile_ids
         }
 
         if submission_type == WordSubmissionType.STEAL_WORD:
             action_payload['robbedUserId'] = robbed_user_id_for_action
-            action_payload['originalWordId'] = primary_stolen_word_for_action.get('wordId')
-            action_payload['originalWordString'] = primary_stolen_word_for_action.get('word')
+            action_payload['originalWordId'] = primary_stolen_word_for_action.get(
+                'wordId')
+            action_payload['originalWordString'] = primary_stolen_word_for_action.get(
+                'word')
         elif submission_type == WordSubmissionType.OWN_WORD_IMPROVEMENT:
-            action_payload['originalWordId'] = primary_original_word_for_action.get('wordId')
-            action_payload['originalWordString'] = primary_original_word_for_action.get('word')
+            action_payload['originalWordId'] = primary_original_word_for_action.get(
+                'wordId')
+            action_payload['originalWordString'] = primary_original_word_for_action.get(
+                'word')
+            print('🧡🧡🧡originalWordString = ', primary_original_word_for_action.get('word'))
 
         add_game_action(current_data, game_id, action_payload)
         logger.debug(f"[submit_word] Game action added: {action_payload}")
@@ -612,12 +371,15 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
         logger.error(f"Transaction failed for game ID {game_id}: {e}")
         return {'success': False, 'message': 'Word submission failed due to conflict or error.'}
     except GameNotFoundError as e:
-        logger.error(f"Game not found during transaction for game ID {game_id}: {e}")
+        logger.error(
+            f"Game not found during transaction for game ID {game_id}: {e}")
         return {'success': False, 'message': str(e)}
     except Exception as e:
-        logger.exception(f"An unexpected error occurred in submit_word for game ID {game_id}: {e}") # Use logger.exception for stack trace
+        # Use logger.exception for stack trace
+        logger.exception(
+            f"An unexpected error occurred in submit_word for game ID {game_id}: {e}")
         return {'success': False, 'message': f'An unexpected error occurred: {str(e)}'}
-    
+
 
 def identifyWordSubmissionType(game_data, user_id, tile_ids):
     """Identifies the type of word submission based on the provided game data.
@@ -727,13 +489,14 @@ def order_words_by_player_score(game_data: dict, potential_word_ids_to_steal_fro
         list[str]: An ordered list of word IDs, sorted by the score of their
                    respective owners in descending order.
     """
-    
+
     word_owner_details = []
     all_words_in_game = game_data.get("words", [])
     players_data = game_data.get("players", {})
 
     # Create a more efficient lookup for word objects by their ID
-    word_map = {word.get("wordId"): word for word in all_words_in_game if word.get("wordId")}
+    word_map = {
+        word.get("wordId"): word for word in all_words_in_game if word.get("wordId")}
 
     for word_id in potential_word_ids_to_steal_from:
         word_obj = word_map.get(word_id)
@@ -745,30 +508,41 @@ def order_words_by_player_score(game_data: dict, potential_word_ids_to_steal_fro
                 owner_score = players_data[owner_id].get("score") or 0
             else:
                 if owner_id:
-                    logger.warning(f"Owner ID '{owner_id}' for word '{word_id}' not found in players data. Assigning score 0.")
+                    logger.warning(
+                        f"Owner ID '{owner_id}' for word '{word_id}' not found in players data. Assigning score 0.")
                 else:
-                    logger.warning(f"Word '{word_id}' is missing 'current_owner_user_id'. Assigning score 0.")
+                    logger.warning(
+                        f"Word '{word_id}' is missing 'current_owner_user_id'. Assigning score 0.")
         else:
-            logger.warning(f"Word ID '{word_id}' not found in game words. Assigning score 0 for sorting.")
-            
+            logger.warning(
+                f"Word ID '{word_id}' not found in game words. Assigning score 0 for sorting.")
+
         word_owner_details.append({"word_id": word_id, "score": owner_score})
 
     # Sort the collected details by score in descending order
-    sorted_word_details = sorted(word_owner_details, key=lambda x: x["score"], reverse=True)
-    
+    sorted_word_details = sorted(
+        word_owner_details, key=lambda x: x["score"], reverse=True)
+
     # Extract and return only the ordered word_ids
     ordered_word_ids = [item["word_id"] for item in sorted_word_details]
-    
+
     return ordered_word_ids
 
 
 def flip_tile(game_id, user_id):
     """Flips a tile within a transaction."""
     game_ref = firebase_service.get_db_reference(f'games/{game_id}')
+    print("⭐️game_id = ", game_id)
+    print("⭐️user_id = ", user_id)
 
     def flip_tile_transaction(current_data):
         if not current_data:
             raise GameNotFoundError(f"Game with ID {game_id} not found.")
+
+        if current_data.get('currentPlayerTurn') != user_id:
+            logger.warning(
+                f"User {user_id} attempted to flip a tile, but it is not their turn.")
+            return  # Abort the transaction.
 
         tiles = current_data.get('tiles', [])
         remaining_letters = current_data.get('remainingLetters', {})
@@ -812,6 +586,7 @@ def flip_tile(game_id, user_id):
         # Update the tile *within* the current_data
         current_data['tiles'][tile_index]['letter'] = letter
         current_data['tiles'][tile_index]['location'] = 'middle'
+        current_data['tiles'][tile_index]['flippedTimestamp'] = int(datetime.now().timestamp() * 1000)
 
         # Update remainingLetters count
         # Use the original remaining_letters dict for updating
@@ -870,9 +645,12 @@ def flip_tile(game_id, user_id):
         return False
     except GameNotFoundError as e:
         print(e)
+        print("⭐️ Game not found during flip_tile transaction.")
         return False
     except Exception as e:
-        print(f"An unexpected error occured: {e}")
+        print("⭐️ Exception in flip_tile transaction:")
+        logger.exception(f"An unexpected error occurred in flip_tile: {e}")
+        print(f"An unexpected error occurred: {e}")
         return False
 
 
@@ -912,7 +690,8 @@ def add_player_to_game(game_id, user_id, username):
         players = current_data.get('players', {})
         if user_id not in players:
             order = len(players) + 1
-            turn = False
+            # if game type is computer, set turn to True
+            turn = True
             if order == 1:
                 turn = True
             players[user_id] = {'game_id': game_id, 'username': username,
@@ -941,7 +720,7 @@ def add_player_to_game(game_id, user_id, username):
         return False
 
 
-def create_game(user_id, username):
+def create_game(user_id, username, game_type):
     """Creates a new game in the database with the user_id as a player."""
     ref = firebase_service.get_db_reference('games')
     game_id = str(uuid.uuid4().int)[:4]
@@ -984,17 +763,24 @@ def create_game(user_id, username):
 
         print("🔄 remainingLetters = ", remainingLetters)
         print("🔄 num_tiles = ", num_tiles)
+        players = {}
+        if game_type == "computer":
+            players = {
+                "computer": {
+                    'game_id': game_id, 'username': 'computer',
+                    'score': 0, 'turn': False, 'turnOrder': 1
 
+                },
+            }
         new_game = {
+            "gameType": game_type,
             "currentPlayerTurn": user_id,
             "currentTurn": 0,
             "gameStatus": "inProgress",
             "remainingLetters": remainingLetters,
             "tiles": tiles,
             "words": [],
-            "players": {},
-            "status": "inProgress",
-            "max_score_to_win_per_player": max_score_to_win_per_player,
+            "players": players,
         }
         current_data[game_id] = new_game
         return current_data
@@ -1018,3 +804,29 @@ def delete_game(game_id):
     """Deletes a game from the database."""
     ref = firebase_service.get_db_reference(f'games/{game_id}')
     ref.delete()
+
+
+def get_games_with_current_player(player_id):
+    """
+    Retrieves games from the database where the 'currentPlayerTurn' is the given player_id.
+
+    Args:
+        player_id (str): The ID of the player whose turn it currently is.
+
+    Returns:
+        dict or None: A dictionary of games matching the criteria, or None if no games are found.
+                      The dictionary keys will be the game IDs.
+    """
+    print(f"Querying games for currentPlayerTurn = '{player_id}'...")
+    try:
+        games_snapshot = firebase_service.get_db_reference("games") \
+                                         .order_by_child("currentPlayerTurn") \
+                                         .equal_to(player_id) \
+                                         .get()
+        all_game_ids = list(games_snapshot.keys())
+
+        print(f"All Game IDs: {all_game_ids}")
+        return all_game_ids
+    except Exception as e:
+        print(f"An error occurred while fetching games: {e}")
+        return None
