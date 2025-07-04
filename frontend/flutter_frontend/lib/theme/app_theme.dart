@@ -11,8 +11,8 @@ import 'package:flutter/material.dart';
          iconTheme: IconThemeData(color: Colors.white),
        ),
        colorScheme: ColorScheme.dark(
-         primary: const Color(0xFF9C27B0),
-         secondary: const Color(0xFF673AB7),
+         primary: const Color(0xFF05B2DC),
+         secondary: const Color(0xFF0B3142),
         //  background: const Color(0xFF181828),
          surface: const Color(0xFF282838),
          onPrimary: Colors.white,
@@ -27,7 +27,7 @@ import 'package:flutter/material.dart';
        ),
        elevatedButtonTheme: ElevatedButtonThemeData(
          style: ElevatedButton.styleFrom(
-           backgroundColor: const Color(0xFF9C27B0),
+           backgroundColor: const Color(0xFF4A148C),
            foregroundColor: Colors.white,
          ),
        ),
