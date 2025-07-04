@@ -73,7 +73,7 @@ class _GameLogState extends State<GameLog> {
         }
         if (actionType == 'OWN_WORD_IMPROVEMENT') {
           logEntry['word'] = logData['word'] ?? '';
-          logEntry['originalWord'] = logData['originalWord'] ?? '';
+          logEntry['originalWordString'] = logData['originalWordString'] ?? '';
         }
         return logEntry;
       }).toList();
@@ -123,9 +123,10 @@ class _GameLogState extends State<GameLog> {
   }
 
   Widget _buildLogMessage(Map<String, dynamic> log) {
-    final username = widget.playerIdToUsernameMap[log['playerId']] ?? 'bing';
+    final username = widget.playerIdToUsernameMap[log['playerId']] ?? 'Player';
     final String message = _getLogMessage(log, username);
-    final Color playerColor = widget.playerColors[log['playerId']] ?? Colors.grey;
+    final Color playerColor =
+        widget.playerColors[log['playerId']] ?? Colors.grey;
     final Color textColor = _getTextColor(log['type']);
     final Color tileBackgroundColor = _getTileColor(log['type']);
     final List<Widget> tileWidgets =
@@ -143,14 +144,15 @@ class _GameLogState extends State<GameLog> {
           onClickTile: (_, __) {},
           isSelected: false,
           backgroundColor: tileBackgroundColor,
-          tileSize: widget.tileSize,
+          tileSize: widget.tileSize * 0.6,
         ),
       );
     }
     return Padding(
       padding: const EdgeInsets.all(10),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start, // Align content to the start
+        crossAxisAlignment:
+            CrossAxisAlignment.start, // Align content to the start
         children: [
           Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -163,43 +165,45 @@ class _GameLogState extends State<GameLog> {
                   color: playerColor,
                   shape: BoxShape.circle,
                 ),
-                margin: const EdgeInsets.only(right: 8, top: 4), // Align with text baseline
+                margin: const EdgeInsets.only(
+                    right: 8, top: 4), // Align with text baseline
               ),
               // Username and Message
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '$username:', // Display username
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: textColor,
-                        fontSize: 14, // Slightly smaller for log
+                child: RichText(
+                  text: TextSpan(
+                    children: [
+                      TextSpan(
+                        text: '$username: ',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: playerColor,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                    Text(
-                      message, // The actual log message
-                      style: TextStyle(
-                        color: textColor,
-                        fontSize: 14,
+                      TextSpan(
+                        text: message,
+                        style: TextStyle(
+                          color: textColor,
+                          fontSize: 14,
+                        ),
                       ),
-                    ),
-                  ],
+                      // Insert WidgetSpans for each tile inline
+                      ...tileWidgets.map((tile) => WidgetSpan(
+                            alignment: PlaceholderAlignment.middle,
+                            child: Padding(
+                              padding:
+                                  const EdgeInsets.symmetric(horizontal: 1.0),
+                              child: tile,
+                            ),
+                          )),
+                    ],
+                  ),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 4),
-          // Display word tiles if any
-          if (tileWidgets.isNotEmpty) ...[
-            Wrap(
-              spacing: 2.0, // Standardized spacing
-              runSpacing: 2.0,
-              children: tileWidgets,
-            ),
-            const SizedBox(height: 4),
-          ],
           Text(
             _formatTimestamp(log['timestamp']),
             style: const TextStyle(fontSize: 10, color: Colors.white54),
@@ -210,29 +214,36 @@ class _GameLogState extends State<GameLog> {
   }
 
   String _getLogMessage(Map<String, dynamic> log, String username) {
+    // print("💚log: $log");
     switch (log['type']) {
       case 'flip_tile':
-        return "flipped a ${log['tileLetter'] ?? 'tile'}";
+        String article = "a";
+        if (['A', 'E', 'F', 'H', 'I', 'L', 'M', 'N', 'O', 'R', 'S', 'X']
+            .contains(log['tileLetter'].toUpperCase())) {
+          article = "an";
+        }
+        return "flipped $article ";
       case 'MIDDLE_WORD':
-        return "created '${log['word'] ?? 'a word'}' from the middle!";
+        return "created a word from the middle!";
       case 'OWN_WORD_IMPROVEMENT':
+        print("💚originalWordString: ${log['originalWordString']}");
         final originalWord = log['originalWordString'] as String?;
-        return "improved '${originalWord ?? 'their word'}' to '${log['word'] ?? 'a new word'}'!";
+        return "improved '${originalWord ?? 'their word'}' to become: ";
       case 'STEAL_WORD':
         final robbedId = log['robbedUserId'] as String;
         final robbedName = widget.playerIdToUsernameMap[robbedId] ?? robbedId;
         final stolenWord = log['originalWordString'] as String?;
         return "stole '${stolenWord ?? 'a word'}' from $robbedName!";
       case 'INVALID_LENGTH':
-        return "submitted a word without enough letters: '${log['word'] ?? ''}'";
+        return "submitted a word without enough letters: ";
       case 'INVALID_NO_MIDDLE':
-        return "submitted a word without using tiles from the middle: '${log['word'] ?? ''}'";
+        return "submitted a word without using tiles from the middle: ";
       case 'INVALID_LETTERS_USED':
-        return "submitted a word with invalid letters: '${log['word'] ?? ''}'";
+        return "submitted a word with invalid letters: ";
       case 'INVALID_WORD_NOT_IN_DICTIONARY':
-        return "submitted a word not in the dictionary: '${log['word'] ?? ''}'";
+        return "submitted a word not in the dictionary: ";
       case 'INVALID_UNKNOWN_WHY':
-        return "submitted an invalid word: '${log['word'] ?? ''}'";
+        return "submitted an invalid word: ";
       default:
         return "performed an unknown action.";
     }
@@ -278,7 +289,7 @@ class _GameLogState extends State<GameLog> {
         onClickTile: (_, __) {},
         isSelected: false,
         backgroundColor: backgroundColor,
-        tileSize: widget.tileSize * 0.8, // Make tiles in log slightly smaller
+        tileSize: widget.tileSize * 0.6, // Make tiles in log slightly smaller
       );
     }).toList();
   }

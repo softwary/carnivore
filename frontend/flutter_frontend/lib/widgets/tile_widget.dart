@@ -15,7 +15,7 @@ class TileWidget extends StatefulWidget {
     required this.onClickTile,
     required this.tileSize,
     this.isSelected = false,
-    this.backgroundColor = Colors.purple, // Default background color
+    this.backgroundColor = const Color(0xFF4A148C), // Default background color
     this.globalKey,
   }) : super(key: key);
 
@@ -26,7 +26,7 @@ class TileWidget extends StatefulWidget {
 class _TileWidgetState extends State<TileWidget> {
   @override
   Widget build(BuildContext context) {
-    debugPrint('💜TileWidget: ${widget.tile.letter} (ID: ${widget.tile.tileId?.toString()}) - isSelected: ${widget.isSelected}, backgroundColor: ${widget.backgroundColor}');
+    // debugPrint('💜TileWidget: ${widget.tile.letter} (ID: ${widget.tile.tileId?.toString()}) - isSelected: ${widget.isSelected}, backgroundColor: ${widget.backgroundColor}');
      
     return GestureDetector(
       key: widget.globalKey, 

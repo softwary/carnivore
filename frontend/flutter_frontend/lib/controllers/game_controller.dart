@@ -449,14 +449,16 @@ class GameController extends StateNotifier<GameControllerState> {
     );
 
     // If no middle tile, find any other available tile
-    if (tileToAssign == null) {
+    if (tileToAssign.tileId.toString().isEmpty) {
       tileToAssign = tilesWithThisLetter.firstWhere(
         (t) => !currentOfficialIds.contains(t.tileId.toString()),
         orElse: () => Tile(letter: '', tileId: '', location: ''),
       );
     }
 
-    if (tileToAssign != null) {
+    if (tileToAssign != null && tileToAssign.tileId.toString().isNotEmpty) {
+      debugPrint(
+          "🙊Assigning tile for letter $letter: tileId=${tileToAssign.tileId}, location=${tileToAssign.location}");
       currentInputtedLetters[tbdIndex] = Tile(
         letter: letter,
         tileId: tileToAssign.tileId,
@@ -467,6 +469,7 @@ class GameController extends StateNotifier<GameControllerState> {
           tileToAssign.tileId.toString()); // Also mark as potential initially
     } else {
       // No tile could be assigned (e.g., all are already used or official in current input)
+      debugPrint("No assignable tile found for letter $letter");
       currentInputtedLetters[tbdIndex] =
           Tile(letter: letter, tileId: 'invalid', location: '');
     }

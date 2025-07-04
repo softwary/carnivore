@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/classes/tile.dart';
+import 'package:flutter_frontend/widgets/animated_tile_widget.dart';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
 
 class MiddleTilesGridWidget extends StatelessWidget {
@@ -13,6 +14,7 @@ class MiddleTilesGridWidget extends StatelessWidget {
   final int crossAxisCount;
   final Map<String, Color> playerColors;
   final String? selectingPlayerId;
+  final String? newestTileId;
 
   const MiddleTilesGridWidget({
     Key? key,
@@ -26,6 +28,7 @@ class MiddleTilesGridWidget extends StatelessWidget {
     required this.crossAxisCount,
     required this.playerColors,
     this.selectingPlayerId,
+    this.newestTileId,
   }) : super(key: key);
 
   @override
@@ -44,11 +47,22 @@ class MiddleTilesGridWidget extends StatelessWidget {
         final tile = middleTiles[index];
         final tileId = tile.tileId.toString();
         final isSelected = officiallySelectedTileIds.contains(tileId);
-        final isHighlighted = potentiallySelectedTileIds.contains(tileId);
 
         final selectingPlayerColor =
             playerColors[selectingPlayerId] ?? const Color(0xFF4A148C);
-        final tileColor = const Color(0xFF4A148C); // Set default unselected middle tile color to purple
+        final tileColor = const Color(0xFF4A148C);
+
+        if (tileId == newestTileId) {
+          return AnimatedTileWidget(
+            key: ValueKey(tileId),
+            tile: tile,
+            globalKey: tileGlobalKeys[tileId],
+            tileSize: tileSize,
+            onClickTile: onTileSelected,
+            isSelected: isSelected,
+            selectingPlayerColor: selectingPlayerColor,
+          );
+        }
 
         return TileWidget(
           key: ValueKey(tileId),

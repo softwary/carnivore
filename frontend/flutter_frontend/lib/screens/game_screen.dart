@@ -20,6 +20,7 @@ import 'package:flutter_frontend/widgets/selected_tiles_display.dart';
 import 'package:flutter_frontend/controllers/game_auth_controller.dart';
 import 'package:flutter_frontend/controllers/game_controller.dart';
 import 'package:flutter_frontend/widgets/territory_bar.dart';
+// import 'package:flutter_frontend/widgets/animated_tile_widget.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -92,12 +93,22 @@ class GameScreenState extends ConsumerState<GameScreen>
     List<Map<String, dynamic>> processedPlayerWords = [];
 
     players.forEach((playerId, playerData) {
-      processedPlayerWords.add({
-        'playerId': playerId,
-        'username': playerData['username'],
-        'words': <Map<String, dynamic>>[],
-      });
+      // Ensure playerData is a map before trying to access its properties
+      if (playerData is Map<String, dynamic>) {
+        processedPlayerWords.add({
+          'playerId': playerId, // Make sure playerId is included
+          'username': playerData['username'] as String? ??
+              'Unknown', // Safely access username
+          'words': <Map<String, dynamic>>[],
+        });
+      }
     });
+
+    // Create a map for quick lookup of player index
+    final playerIndexMap = <String, int>{};
+    for (int i = 0; i < processedPlayerWords.length; i++) {
+      playerIndexMap[processedPlayerWords[i]['playerId']] = i;
+    }
 
     // Add destination words (as placeholders) from current data
     for (var currentWord in words) {
@@ -148,23 +159,31 @@ class GameScreenState extends ConsumerState<GameScreen>
           }
         }
       }
-    } else {
-      // No previous data, just process normally
-      for (var word in words) {
-        final status = (word['status'] as String? ?? '').toLowerCase();
-        if (status.contains("valid") &&
-            !destinationWordIdsForAnimation.contains(word['wordId'])) {
-          final ownerId = word['current_owner_user_id'];
-          final playerEntry = processedPlayerWords
-              .firstWhere((p) => p['playerId'] == ownerId, orElse: () => {});
-          if (playerEntry.isNotEmpty) {
-            (playerEntry['words'] as List<Map<String, dynamic>>).add(word);
-          }
-        }
-      }
-    }
+    } 
     return processedPlayerWords;
   }
+
+  List<Map<String, dynamic>> _getPreviousWordsWithPlaceholders(Map<String, dynamic> prevData, String losingPlayerId, String stolenWordId) {
+    final prevWordsList = (prevData['words'] as List<dynamic>? ?? []).cast<Map<String, dynamic>>();
+
+    return prevWordsList.map((word) {
+      if (word['current_owner_user_id'] == losingPlayerId && word['wordId'] == stolenWordId) {
+        // This is the stolen word, create a placeholder
+        return {
+          ...word,
+          'word': 'placeholder', // Or some other indication
+          'status': 'placeholder',
+          'isPlaceholder': true,
+        };
+      }
+      return word;
+    }).toList();
+  }
+
+  bool _isWordPlaceholder(Map<String, dynamic> word) {
+    return word['isPlaceholder'] == true;
+  }
+
 
   // Helper to generate messages for the mobile overlay
   String _getLogMessageForOverlay(Map<String, dynamic> log) {
@@ -172,10 +191,15 @@ class GameScreenState extends ConsumerState<GameScreen>
     final String actionType = log['type'] as String? ?? "Unknown Type";
     final String? word = log['word'] as String?; // Word string from the action
     final String? tileLetter = log['tileLetter'] as String?; // For flip_tile
-
+    print("💚originalWordString: ${log['originalWordString']}");
     switch (actionType) {
       case 'flip_tile':
-        return "$username flipped a ${tileLetter ?? 'tile'}";
+        String article = "a";
+        if (['A', 'E', 'F', 'H', 'I', 'L', 'M', 'N', 'O', 'R', 'S', 'X']
+            .contains(tileLetter?.toUpperCase())) {
+          article = "an";
+        }
+        return "$username flipped $article ${tileLetter ?? 'tile'}";
       case 'MIDDLE_WORD':
         return "$username created '${word ?? 'a word'}' from the middle!";
       case 'OWN_WORD_IMPROVEMENT':
@@ -225,14 +249,15 @@ class GameScreenState extends ConsumerState<GameScreen>
     if (distinctLocations.length > 1 && !distinctLocations.contains('middle')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text(
-                "You can't use letters from multiple words without using the middle.")),
+          content: Text(
+              "You can only steal from one player at a time, and you must use at least one tile from the middle."),
+        ),
       );
       return;
     } else if (distinctLocations.length > 1) {
       // This logic assumes one of the locations is a wordId from an existing word.
       final wordIdLocation = distinctLocations.firstWhere(
-        (loc) => loc != 'middle' && loc != null && loc.isNotEmpty,
+        (loc) => loc != 'middle' && loc.isNotEmpty,
         orElse: () => '', // Default to empty string if no such location found
       );
 
@@ -413,8 +438,18 @@ class GameScreenState extends ConsumerState<GameScreen>
         // 2) derive the counts
         final tilesLeftCount =
             allTiles.where((t) => t.letter == null || t.letter!.isEmpty).length;
-        // 3) isolate the “middle” tiles
+        // 3) isolate the “middle” tiles and sort them
         middleTiles = allTiles.where((t) => t.location == 'middle').toList();
+        middleTiles.sort((a, b) {
+          final aTimestamp = a.flippedTimestamp ?? 0;
+          final bTimestamp = b.flippedTimestamp ?? 0;
+          return aTimestamp.compareTo(bTimestamp);
+        });
+
+        // Identify the newest tile
+        final String? newestTileId =
+            middleTiles.isNotEmpty ? middleTiles.last.tileId.toString() : null;
+
         // 4) figure out whose turn it is
         final currentPlayerTurn =
             currentGameData['currentPlayerTurn'] as String? ?? '';
@@ -427,19 +462,25 @@ class GameScreenState extends ConsumerState<GameScreen>
         final playerIdToUsername = <String, String>{};
         playerColorMap.clear(); // Clear previous values
         var colorIdx = 0;
-        for (final entry in playersMap.entries) {
+
+        // Filter out non-player entries like 'max_score_to_win_per_player'
+        final playerEntries =
+            playersMap.entries.where((entry) => entry.value is Map);
+
+        for (final entry in playerEntries) {
+          final playerData = entry.value as Map<String, dynamic>;
           playerIdToUsername[entry.key] =
-              entry.value['username'] as String? ?? '';
+              playerData['username'] as String? ?? '';
           playerColorMap[entry.key] =
               playerColors[colorIdx++ % playerColors.length];
         }
 
         // Prepare player scores for the TerritoryBar
         final List<Map<String, dynamic>> playerScoresForTerritoryBar =
-            playersMap.entries
+            playerEntries
                 .map((entry) => {
                       'playerId': entry.key,
-                      'score': entry.value['score'] as int,
+                      'score': (entry.value as Map)['score'] as int,
                     })
                 .toList();
 
@@ -448,9 +489,33 @@ class GameScreenState extends ConsumerState<GameScreen>
         // 6) build & sort playerWords
 
         if (_previousGameData != null && mounted) {
+          
           _checkForWordTransformations(_previousGameData!, currentGameData);
         }
-        playerWords = processPlayerWords(playersMap, wordsList);
+
+        // Use a map containing only the filtered player entries
+        final filteredPlayersMap = Map.fromEntries(playerEntries);
+
+        List<Map<String, dynamic>> playerWordsPreProcessed;
+        // Before processing the current player words, check if it's a stealing event
+        if (sourceWordIdsForAnimation.isNotEmpty && _previousGameData != null) {
+            // Find the source word ID and the losing player ID from sourceWordIdsForAnimation
+            String stolenWordId = sourceWordIdsForAnimation.first;
+            String losingPlayerId = _previousGameData!['words'].firstWhere(
+                    (word) => word['wordId'] == stolenWordId,
+                    orElse: () => {})['current_owner_user_id'] as String? ?? '';
+
+            // Get the previous words with a placeholder for the stolen word
+            List<Map<String, dynamic>> prevWordsWithPlaceholder = _getPreviousWordsWithPlaceholders(_previousGameData!, losingPlayerId, stolenWordId);
+
+            // Process player words using the previous state with placeholders
+            playerWordsPreProcessed = processPlayerWords(filteredPlayersMap, wordsList);
+        } else {
+            // Normal processing of player words if no stealing occurred
+            playerWordsPreProcessed = processPlayerWords(filteredPlayersMap, wordsList);
+        }
+
+        playerWords = playerWordsPreProcessed;
         final me = FirebaseAuth.instance.currentUser?.uid;
 
         playerWords.sort((a, b) {
@@ -584,175 +649,179 @@ class GameScreenState extends ConsumerState<GameScreen>
                   body: LayoutBuilder(// LayoutBuilder for responsive UI
                       builder: (context, constraints) {
                     return Padding(
-                      // Padding for the main content area
-                      padding: const EdgeInsets.all(16.0),
-                      child: Column(
-                        // Main column for game content
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          // Player Words section (remains the same)
+                        // Padding for the main content area
+                        padding: const EdgeInsets.all(16.0),
+                        child: Column(
+                          // Main column for game content
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            // Player Words section (remains the same)
 
-                          Expanded(
-                            flex: 3,
-                            child: ListView.builder(
-                              itemCount: playerWords.length,
-                              itemBuilder: (context, index) {
-                                final playerWordData = playerWords[index];
-                                final isCurrentPlayerTurn =
-                                    playerWordData['playerId'] ==
-                                        currentPlayerTurn;
-                                final score = currentGameData['players']
-                                        [playerWordData['playerId']]['score'] ??
-                                    0;
-                                final maxScoreToWin = currentGameData[
-                                    'max_score_to_win_per_player'] as int;
+                            Expanded(
+                              flex: 3,
+                              child: ListView.builder(
+                                itemCount: playerWords.length,
+                                itemBuilder: (context, index) {
+                                  final playerWordData = playerWords[index];
+                                  final isCurrentPlayerTurn =
+                                      playerWordData['playerId'] ==
+                                          currentPlayerTurn;
+                                  final score = currentGameData['players']
+                                              [playerWordData['playerId']]
+                                          ['score'] ??
+                                      0;
+                                  final maxScoreToWin = currentGameData[
+                                      'max_score_to_win_per_player'] as int;
 
-                                final playerIndex = index;
-                                final playerCount = playerWords.length;
-                                return PlayerWords(
-                                  // Pass the animation flag down if PlayerWords/TileWidget needs to know
-                                  // For now, PlayerWords will receive words already processed,
-                                  // some of which might have 'isAnimatingDestinationPlaceholder'.
-                                  // TileWidget within PlayerWords should handle this flag for opacity.
-                                  // This is handled by the PlayerWords widget internally by checking the word data.
-                                  key: ValueKey(playerWordData['playerId']),
-                                  username: playerWordData['username'],
-                                  selectingPlayerId: currentUserId,
-                                  playerId: playerWordData['playerId'],
-                                  words: playerWordData['words'],
-                                  playerColors: playerColorMap,
-                                  playerIndex: playerIndex,
-                                  playerCount: playerCount,
-                                  // onClickTile: handleTileSelection,
-                                  // officiallySelectedTileIds:
-                                  //     officiallySelectedTileIds,
-                                  // potentiallySelectedTileIds:
-                                  //     potentiallySelectedTileIds,
-                                  // onClearSelection: () {},
-                                  onClickTile:
-                                      gameController.handleTileSelection,
-                                  officiallySelectedTileIds: gameControllerState
-                                      .officiallySelectedTileIds,
-                                  potentiallySelectedTileIds:
-                                      gameControllerState
-                                          .potentiallySelectedTileIds,
-                                  onClearSelection: gameController.clearInput,
-                                  allTiles: allTiles,
-                                  tileGlobalKeys: tileGlobalKeys,
-                                  tileSize: tileSize,
-                                  isCurrentPlayerTurn: isCurrentPlayerTurn,
-                                  score: score,
-                                  maxScoreToWin: maxScoreToWin,
-                                );
-                              },
-                            ),
-                          ),
-
-                          const SizedBox(height: 10),
-
-                          // Tiles & Game Log Row
-                          Expanded(
-                            flex: 1,
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Expanded(
-                                  flex: 2,
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      const SizedBox(height: 5),
-                                      Text(
-                                        'Tiles ($tilesLeftCount Left):',
-                                        style: TextStyle(
-                                            fontSize: 18,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.white),
-                                      ),
-                                      MiddleTilesGridWidget(
-                                        middleTiles: middleTiles,
-                                        officiallySelectedTileIds:
-                                            gameControllerState
-                                                .officiallySelectedTileIds,
-                                        potentiallySelectedTileIds:
-                                            gameControllerState
-                                                .potentiallySelectedTileIds,
-                                        tileGlobalKeys: tileGlobalKeys,
-                                        tileSize: tileSize,
-                                        onTileSelected:
-                                            gameController.handleTileSelection,
-                                        playerColors: playerColorMap,
-                                        selectingPlayerId: currentUserId,
-                                        currentPlayerTurnUsername:
-                                            playerIdToUsernameMap[
-                                                    currentPlayerTurn] ??
-                                                'Someone',
-                                        crossAxisCount:
-                                            constraints.maxWidth > 600 ? 12 : 8,
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                if (MediaQuery.of(context).size.width < 600 &&
-                                    _mobileLogMessage != null)
-                                  Expanded(
-                                    flex: 1,
-                                    child: MobileGameLogOverlay(
-                                      message: _mobileLogMessage!,
-                                      onComplete: () {
-                                        if (mounted) {
-                                          setState(() {
-                                            _mobileLogMessage = null;
-                                          });
-                                        }
-                                      },
-                                      playerColors: playerColorMap,
-                                      playerIdToUsernameMap:
-                                          playerIdToUsernameMap,
-                                    ),
-                                  ),
-                                if (constraints.maxWidth > 600)
-                                  Expanded(
-                                    flex: 1,
-                                    child: GameLog(
-                                        gameId: widget.gameId,
-                                        gameData: currentGameData,
-                                        playerIdToUsernameMap:
-                                            playerIdToUsernameMap,
-                                        tileSize: tileSize,
-                                        playerColors: playerColorMap),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-
-                          Text(
-                            "Selected Tiles:",
-                            style: TextStyle(
-                                fontSize: 18,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white),
-                          ),
-                          Expanded(
-                            flex: 1,
-                            child: Align(
-                              alignment: Alignment.topLeft,
-                              child: SelectedTilesDisplay(
-                                inputtedLetters:
-                                    gameControllerState.inputtedLetters,
-                                tileSize: tileSize,
-                                getTileBackgroundColor: getBackgroundColor,
-                                onRemoveTile: () {
-                                  gameController.handleBackspace();
+                                  final playerIndex = index;
+                                  final playerCount = playerWords.length;
+                                  return PlayerWords(
+                                    // Pass the animation flag down if PlayerWords/TileWidget needs to know
+                                    // For now, PlayerWords will receive words already processed,
+                                    // some of which might have 'isAnimatingDestinationPlaceholder'.
+                                    // TileWidget within PlayerWords should handle this flag for opacity.
+                                    // This is handled by the PlayerWords widget internally by checking the word data.
+                                    key: ValueKey(playerWordData['playerId']),
+                                    username: playerWordData['username'],
+                                    selectingPlayerId: currentUserId,
+                                    playerId: playerWordData['playerId'],
+                                    words: playerWordData['words'],
+                                    playerColors: playerColorMap,
+                                    playerIndex: playerIndex,
+                                    playerCount: playerCount,
+                                    // onClickTile: handleTileSelection,
+                                    // officiallySelectedTileIds:
+                                    //     officiallySelectedTileIds,
+                                    // potentiallySelectedTileIds:
+                                    //     potentiallySelectedTileIds,
+                                    // onClearSelection: () {},
+                                    onClickTile:
+                                        gameController.handleTileSelection,
+                                    officiallySelectedTileIds:
+                                        gameControllerState
+                                            .officiallySelectedTileIds,
+                                    potentiallySelectedTileIds:
+                                        gameControllerState
+                                            .potentiallySelectedTileIds,
+                                    onClearSelection: gameController.clearInput,
+                                    allTiles: allTiles,
+                                    tileGlobalKeys: tileGlobalKeys,
+                                    tileSize: tileSize,
+                                    isCurrentPlayerTurn: isCurrentPlayerTurn,
+                                    score: score,
+                                    maxScoreToWin: maxScoreToWin,
+                                  );
                                 },
                               ),
                             ),
-                          ),
-                        ],
-                      ),
-                    );
+
+                            const SizedBox(height: 10),
+
+                            // Tiles & Game Log Row
+                            Expanded(
+                              flex: 1,
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Expanded(
+                                    flex: 2,
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
+                                        const SizedBox(height: 5),
+                                        Text(
+                                          'Tiles ($tilesLeftCount Left):',
+                                          style: TextStyle(
+                                              fontSize: 18,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.white),
+                                        ),
+                                        MiddleTilesGridWidget(
+                                          middleTiles: middleTiles,
+                                          newestTileId: newestTileId,
+                                          officiallySelectedTileIds:
+                                              gameControllerState
+                                                  .officiallySelectedTileIds,
+                                          potentiallySelectedTileIds:
+                                              gameControllerState
+                                                  .potentiallySelectedTileIds,
+                                          tileGlobalKeys: tileGlobalKeys,
+                                          tileSize: tileSize,
+                                          onTileSelected: gameController
+                                              .handleTileSelection,
+                                          playerColors: playerColorMap,
+                                          selectingPlayerId: currentUserId,
+                                          currentPlayerTurnUsername:
+                                              playerIdToUsernameMap[
+                                                      currentPlayerTurn] ??
+                                                  'Someone',
+                                          crossAxisCount:
+                                              constraints.maxWidth > 600
+                                                  ? 12
+                                                  : 8,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  if (MediaQuery.of(context).size.width < 600 &&
+                                      _mobileLogMessage != null)
+                                    Expanded(
+                                      flex: 1,
+                                      child: MobileGameLogOverlay(
+                                        message: _mobileLogMessage!,
+                                        onComplete: () {
+                                          if (mounted) {
+                                            setState(() {
+                                              _mobileLogMessage = null;
+                                            });
+                                          }
+                                        },
+                                        playerColors: playerColorMap,
+                                        playerIdToUsernameMap:
+                                            playerIdToUsernameMap,
+                                      ),
+                                    ),
+                                  if (constraints.maxWidth > 600)
+                                    Expanded(
+                                      flex: 1,
+                                      child: GameLog(
+                                          gameId: widget.gameId,
+                                          gameData: currentGameData,
+                                          playerIdToUsernameMap:
+                                              playerIdToUsernameMap,
+                                          tileSize: tileSize,
+                                          playerColors: playerColorMap),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 10),
+
+                            Text(
+                              "Selected Tiles:",
+                              style: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white),
+                            ),
+                            Expanded(
+                              flex: 1,
+                              child: Align(
+                                alignment: Alignment.topLeft,
+                                child: SelectedTilesDisplay(
+                                  inputtedLetters:
+                                      gameControllerState.inputtedLetters,
+                                  tileSize: tileSize,
+                                  getTileBackgroundColor: getBackgroundColor,
+                                  onRemoveTile: () {
+                                    gameController.handleBackspace();
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
+                        ));
                   }),
                   floatingActionButton: GameActionsFab(
                     onClear: () {

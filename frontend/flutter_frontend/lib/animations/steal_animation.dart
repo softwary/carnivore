@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_frontend/classes/tile.dart';
 import 'package:flutter_frontend/widgets/tile_widget.dart';
@@ -172,18 +173,18 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
           : (_gs.playerColorMap[fromPlayerId] ?? Colors.grey); // If from a player, start with their color
 
       final growController = AnimationController(
-        duration: const Duration(milliseconds: 500),
+        duration: const Duration(milliseconds: 250), // Faster pop
         vsync: this,
       );
       controllers.add(growController);
 
       final growAnimation = TweenSequence<double>([
-        TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.5), weight: 50),
-        TweenSequenceItem(tween: Tween<double>(begin: 1.5, end: 1.0), weight: 50),
+        TweenSequenceItem(tween: Tween<double>(begin: 1.0, end: 1.4), weight: 50),
+        TweenSequenceItem(tween: Tween<double>(begin: 1.4, end: 1.0), weight: 50),
       ]).animate(CurvedAnimation(parent: growController, curve: Curves.easeInOut));
 
       final moveController = AnimationController(
-        duration: const Duration(milliseconds: 600),
+        duration: const Duration(milliseconds: 450), // Faster, more energetic travel time
         vsync: this,
       );
       controllers.add(moveController);
@@ -221,7 +222,7 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
           final moveAnimation = Tween<Offset>(
             begin: adjustedStartPosition,
             end: currentEndPosition,
-          ).animate(CurvedAnimation(parent: moveController, curve: Curves.easeInOutCubic));
+          ).animate(CurvedAnimation(parent: moveController, curve: Curves.easeOutQuart));
 
           return Stack(
             children: [
@@ -252,26 +253,37 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
                 animation: moveAnimation,
                 builder: (context, child) {
                   if (moveController.value == 0.0) return const SizedBox.shrink();
-                  final scale = 1.0 + (0.2 * (1 - (moveController.value - 0.5).abs() * 2));
+
+                  // Create a subtle arc effect by adding a vertical offset
+                  final double arcHeight = 50.0;
+                  final double arcValue = math.sin(moveController.value * math.pi);
+                  final arcOffset = Offset(0, -arcHeight * arcValue);
+
+
+                  // Scale down during flight and back up for a more dynamic feel.
+                  final double scaleValue = 1.0 - (math.sin(moveController.value * math.pi) * 0.2);
+
                   return Positioned(
-                    left: moveAnimation.value.dx,
-                    top: moveAnimation.value.dy,
-                    child: Transform.scale(
-                      scale: scale,
-                      child: Material(
-                        type: MaterialType.transparency,
-                        child: TileWidget(
-                          tile: tileData,
-                          tileSize: startSize?.width ?? 0,
-                          onClickTile: (_, __) {},
-                          isSelected: false,
-                          backgroundColor: Color.lerp(
-                            animationStartColor, // Animate from the determined start color
-                            _gs.playerColorMap[toPlayerId] ?? Colors.purple,
-                            moveController.value,
-                          ) ?? Colors.purple,
+                    left: moveAnimation.value.dx + arcOffset.dx,
+                    top: moveAnimation.value.dy + arcOffset.dy,
+                      child: Transform.scale(
+                        scale: scaleValue,
+                        child: Material(
+                          type: MaterialType.transparency,
+                          child: TileWidget(
+                            tile: tileData,
+                            tileSize: startSize?.width ?? 0,
+                            onClickTile: (_, __) {},
+                            isSelected: false,
+                            backgroundColor: Color.lerp(
+                                  animationStartColor, // Animate from the determined start color
+                                  _gs.playerColorMap[toPlayerId] ??
+                                      Colors.purple,
+                                  moveController.value,
+                                ) ??
+                                Colors.purple,
+                          ),
                         ),
-                      ),
                     ),
                   );
                 },
@@ -282,13 +294,13 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
       );
       entries.add(overlayEntry);
       overlay.insert(overlayEntry);
-      final timer = Timer(Duration(milliseconds: i * 200), () {
+      final timer = Timer(Duration(milliseconds: i * 75), () { // Slightly adjusted delay for flow
         if (isAnimationCancelled || !_gs.mounted) return;
         growController.forward().then((_) {
           if (isAnimationCancelled || !_gs.mounted) return;
           moveController.forward().then((_) {
             if (i == tileIds.length - 1) {
-              Timer(const Duration(milliseconds: 200), () {
+              Timer(const Duration(milliseconds: 150), () { // A bit more time for the last tile to settle
                 if (_gs.mounted && !isAnimationCancelled) cleanupAnimations();
               });
             }
@@ -298,7 +310,7 @@ mixin StealAnimationMixin<T extends ConsumerState<GameScreen>> on TickerProvider
       delayTimers.add(timer);
     }
 
-    Timer(const Duration(seconds: 5), () {
+    Timer(const Duration(seconds: 2), () { // Reduced overall fallback timeout
       if (!isAnimationCancelled && _gs.mounted) {
         cleanupAnimations();
       }
