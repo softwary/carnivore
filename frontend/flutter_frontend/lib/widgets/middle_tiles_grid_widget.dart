@@ -34,8 +34,6 @@ class MiddleTilesGridWidget extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GridView.builder(
-      shrinkWrap: true,
-      physics: const NeverScrollableScrollPhysics(),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         childAspectRatio: 1,
