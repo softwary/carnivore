@@ -375,7 +375,6 @@ def submit_word(game_id: str, user_id: str, tile_ids: list[int]) -> dict:
             f"Game not found during transaction for game ID {game_id}: {e}")
         return {'success': False, 'message': str(e)}
     except Exception as e:
-        # Use logger.exception for stack trace
         logger.exception(
             f"An unexpected error occurred in submit_word for game ID {game_id}: {e}")
         return {'success': False, 'message': f'An unexpected error occurred: {str(e)}'}
@@ -406,7 +405,7 @@ def identifyWordSubmissionType(game_data, user_id, tile_ids):
     if not game_data:
         logger.debug(
             f"[game_service.py][identifyWordSubmissionType] Game data is None.")
-        raise GameNotFoundError(f"Game data is None.")  # Use custom exception.
+        raise GameNotFoundError(f"Game data is None.") 
 
     tiles = [tile_service.get_tile_from_data(
         game_data, tile_id) for tile_id in tile_ids]
@@ -500,7 +499,7 @@ def order_words_by_player_score(game_data: dict, potential_word_ids_to_steal_fro
 
     for word_id in potential_word_ids_to_steal_from:
         word_obj = word_map.get(word_id)
-        owner_score = 0  # Default score if owner/score is not found
+        owner_score = 0 
 
         if word_obj:
             owner_id = word_obj.get("current_owner_user_id")
@@ -532,8 +531,6 @@ def order_words_by_player_score(game_data: dict, potential_word_ids_to_steal_fro
 def flip_tile(game_id, user_id):
     """Flips a tile within a transaction."""
     game_ref = firebase_service.get_db_reference(f'games/{game_id}')
-    print("⭐️game_id = ", game_id)
-    print("⭐️user_id = ", user_id)
 
     def flip_tile_transaction(current_data):
         if not current_data:
@@ -551,9 +548,6 @@ def flip_tile(game_id, user_id):
             tile for tile in tiles if tile['location'] == 'unflippedTilesPool']
         available_letters = {l: c for l,
                              c in remaining_letters.items() if c > 0}
-        print("🔄 available_letters = ", available_letters)
-        print(" ")
-        # if not unflipped_tiles or not any(remaining_letters.values()):
         if not unflipped_tiles or not available_letters:
 
             logger.debug(
@@ -583,7 +577,7 @@ def flip_tile(game_id, user_id):
             raise ValueError(
                 f"Tile with ID {tile['tileId']} not found during transaction.")
 
-        # Update the tile *within* the current_data
+        # Update the tile within the current_data
         current_data['tiles'][tile_index]['letter'] = letter
         current_data['tiles'][tile_index]['location'] = 'middle'
         current_data['tiles'][tile_index]['flippedTimestamp'] = int(datetime.now().timestamp() * 1000)
@@ -605,7 +599,7 @@ def flip_tile(game_id, user_id):
         # Assign the modified dictionary back
         current_data['remainingLetters'] = remaining_letters
 
-        # Add game action *within* the transaction
+        # Add game action within the transaction
         add_game_action(current_data, game_id, {
             'type': 'flip_tile',
             'playerId': user_id,
@@ -759,10 +753,7 @@ def create_game(user_id, username, game_type):
             {"letter": "", "location": "unflippedTilesPool", "tileId": i}
             for i in range(num_tiles)
         ]
-        max_score_to_win_per_player = num_tiles
 
-        print("🔄 remainingLetters = ", remainingLetters)
-        print("🔄 num_tiles = ", num_tiles)
         players = {}
         if game_type == "computer":
             players = {
