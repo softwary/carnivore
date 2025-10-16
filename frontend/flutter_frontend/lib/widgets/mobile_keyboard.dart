@@ -4,12 +4,16 @@ class MobileKeyboard extends StatelessWidget {
   final void Function(String) onLetterPressed;
   final VoidCallback onDeletePressed;
   final VoidCallback onEnterPressed;
+  final Color? playerColor;
+  final bool isCurrentUsersTurn;
 
   const MobileKeyboard({
     super.key,
     required this.onLetterPressed,
     required this.onDeletePressed,
     required this.onEnterPressed,
+    this.isCurrentUsersTurn = false,
+    this.playerColor,
   });
 
   static double getKeyboardHeight(BuildContext context) {
@@ -36,7 +40,7 @@ class MobileKeyboard extends StatelessWidget {
                   ['A', 'S', 'D', 'F', 'G', 'H', 'J', 'K', 'L'])),
           Expanded(
               child: _buildKeyboardRow(
-                  ['ENTER', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'DEL'])),
+                  ['DEL', 'Z', 'X', 'C', 'V', 'B', 'N', 'M', 'ENTER'])),
         ],
       ),
     );
@@ -47,9 +51,13 @@ class MobileKeyboard extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.center,
       children: letters.map((letter) {
         if (letter == 'ENTER') {
-          return _buildSpecialKey(letter, onEnterPressed, flex: 3);
+          return _buildSpecialKey(letter, onEnterPressed, showBorder: true,
+              flex: 3, backgroundColor: Colors.yellow[700]!);
         } else if (letter == 'DEL') {
-          return _buildSpecialKey(letter, onDeletePressed, flex: 3);
+          return _buildSpecialKey(letter, onDeletePressed,
+              flex: 3,
+              backgroundColor:
+                  const Color.fromARGB(255, 187, 60, 51)); // A nice red
         }
         return _buildLetterKey(letter);
       }).toList(),
@@ -64,14 +72,14 @@ class MobileKeyboard extends StatelessWidget {
         child: AspectRatio(
           aspectRatio: 0.75,
           child: Material(
-            color: Colors.grey[700],
+            color: playerColor ?? Colors.grey[700],
             borderRadius: BorderRadius.circular(4),
             child: InkWell(
               onTap: () => onLetterPressed(letter),
               child: Center(
                 child: Text(
                   letter,
-                  style: const TextStyle(
+                  style: TextStyle(
                     color: Colors.white,
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -85,25 +93,38 @@ class MobileKeyboard extends StatelessWidget {
     );
   }
 
-  Widget _buildSpecialKey(String label, VoidCallback onPressed, {int flex = 2}) {
+  Widget _buildSpecialKey(String label, VoidCallback onPressed,
+      {int flex = 2, Color? backgroundColor, bool showBorder = false}) {
     return Expanded(
       flex: flex,
       child: Padding(
         padding: const EdgeInsets.all(2.0),
         child: AspectRatio(
           aspectRatio: 1.0,
-          child: Material(
-            color: Colors.grey[600],
-            borderRadius: BorderRadius.circular(4),
-            child: InkWell(
-              onTap: onPressed,
-              child: Center(
-                child: Text(
-                  label,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
+          child: Container(
+            decoration: BoxDecoration(
+              color: backgroundColor ?? Colors.grey[600],
+              borderRadius: BorderRadius.circular(4),
+              border: showBorder && isCurrentUsersTurn
+                  ? Border.all(
+                      color: const Color.fromARGB(255, 255, 0, 251),
+                      width: 3.0,
+                    )
+                  : null,
+            ),
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onPressed,
+                borderRadius: BorderRadius.circular(4),
+                child: Center(
+                  child: Text(
+                    label,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
