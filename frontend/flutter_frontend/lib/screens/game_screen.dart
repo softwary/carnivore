@@ -20,7 +20,7 @@ import 'package:flutter_frontend/widgets/selected_tiles_display.dart';
 import 'package:flutter_frontend/controllers/game_auth_controller.dart';
 import 'package:flutter_frontend/controllers/game_controller.dart';
 import 'package:flutter_frontend/widgets/territory_bar.dart';
-import 'package:flutter_frontend/widgets/wordle_keyboard.dart';
+import 'package:flutter_frontend/widgets/mobile_keyboard.dart';
 
 class GameScreen extends ConsumerStatefulWidget {
   final String gameId;
@@ -65,9 +65,9 @@ class GameScreenState extends ConsumerState<GameScreen>
   Map<String, Color> playerColorMap = {}; // Store player colors
   Map<String, String> playerIdToUsernameMap = {};
   List<Color> playerColors = [
-    Color(0xFF1449A2),
+    Color.fromARGB(255, 195, 92, 204),
     Color(0xFF67bcaf),
-    Color(0xFFbe9fc1),
+    Color(0xFF1449A2),
     Color(0xFF2d6164),
     Colors.purple,
     Colors.yellow,
@@ -287,8 +287,6 @@ class GameScreenState extends ConsumerState<GameScreen>
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('An error occurred: ${e.toString()}')),
       );
-      // Consider if input should be cleared on such an exception.
-      // gameController.clearInput(); // Optionally
     }
   }
 
@@ -609,13 +607,15 @@ class GameScreenState extends ConsumerState<GameScreen>
                             // Game Instructions button on the right
                             icon: const Icon(Icons.help_outline),
                             onPressed: () {
+                              final isMobile =
+                                  MediaQuery.of(context).size.width < 600;
                               showDialog(
                                 context: context,
                                 builder: (BuildContext context) {
                                   return AlertDialog(
                                     title: const Text("Game Instructions"),
-                                    content:
-                                        const GameInstructionsDialogContent(),
+                                    content: GameInstructionsDialogContent(
+                                        isMobile: isMobile),
                                     actions: [
                                       TextButton(
                                         onPressed: () {
@@ -635,10 +635,12 @@ class GameScreenState extends ConsumerState<GameScreen>
                       actions: [],
                     ),
 
-                    body: LayoutBuilder(// LayoutBuilder for responsive UI
-                        builder: (context, constraints) {
-                      return Padding(
-                          // Padding for the main content area
+                    body: Stack(
+                      children: [
+                        LayoutBuilder(// LayoutBuilder for responsive UI
+                            builder: (context, constraints) {
+                          return Padding(
+                              // Padding for the main content area
                           padding: const EdgeInsets.all(16.0),
                           child: Column(
                             // Main column for game content
@@ -678,13 +680,10 @@ class GameScreenState extends ConsumerState<GameScreen>
                                       playerIndex: playerIndex,
                                       playerCount: playerCount,
                                       // onClickTile: handleTileSelection,
-                                      // officiallySelectedTileIds:
-                                      //     officiallySelectedTileIds,
-                                      // potentiallySelectedTileIds:
-                                      //     potentiallySelectedTileIds,
-                                      // onClearSelection: () {},
-                                      onClickTile:
-                                          gameController.handleTileSelection,
+                                      isKeyboardMode: _isKeyboardVisible,
+                                      onClickTile: _isKeyboardVisible
+                                          ? (tile, isSelected) {}
+                                          : gameController.handleTileSelection,
                                       officiallySelectedTileIds:
                                           gameControllerState
                                               .officiallySelectedTileIds,
@@ -738,8 +737,9 @@ class GameScreenState extends ConsumerState<GameScreen>
                                                       .potentiallySelectedTileIds,
                                               tileGlobalKeys: tileGlobalKeys,
                                               tileSize: tileSize,
-                                              onTileSelected: gameController
-                                                  .handleTileSelection,
+                                              onTileSelected: _isKeyboardVisible
+                                                  ? (tile, isSelected) {}
+                                                  : gameController.handleTileSelection as void Function(Tile, bool),
                                               playerColors: playerColorMap,
                                               selectingPlayerId: currentUserId,
                                               currentPlayerTurnUsername:
@@ -813,8 +813,11 @@ class GameScreenState extends ConsumerState<GameScreen>
                                 ),
                               ),
                             ],
-                          ));
-                    }),
+                          ),
+                        );
+                        }),
+                      ],
+                    ),
                     // Show this only if screen is wider than 600px
                     // This is the FAB for actions like flipping a new tile, clearing input, etc.
 
@@ -832,6 +835,8 @@ class GameScreenState extends ConsumerState<GameScreen>
                 ),
                 if (_isKeyboardVisible)
                   MobileKeyboard(
+                    isCurrentUsersTurn: isCurrentUsersTurn,
+                    playerColor: playerColorMap[currentUserId],
                     onLetterPressed: (letter) {
                       gameController.handleLetterTyped(letter.toUpperCase());
                     },
