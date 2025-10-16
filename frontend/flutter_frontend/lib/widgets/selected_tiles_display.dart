@@ -7,6 +7,7 @@ class SelectedTilesDisplay extends StatelessWidget {
   final double tileSize;
   final Color Function(Tile tile) getTileBackgroundColor;
   final VoidCallback onRemoveTile; // Callback when any tile's remove icon is pressed
+  final bool isKeyboardMode;
 
   const SelectedTilesDisplay({
     super.key,
@@ -14,6 +15,7 @@ class SelectedTilesDisplay extends StatelessWidget {
     required this.tileSize,
     required this.getTileBackgroundColor,
     required this.onRemoveTile,
+    this.isKeyboardMode = false,
   });
 
   @override
@@ -32,6 +34,7 @@ class SelectedTilesDisplay extends StatelessWidget {
           tileSize: tileSize,
           backgroundColor: getTileBackgroundColor(tile),
           onRemove: onRemoveTile, // This will trigger the callback passed from GameScreen
+          isKeyboardMode: isKeyboardMode,
         );
       }).toList(),
     );

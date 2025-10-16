@@ -53,11 +53,20 @@ class GameScreenState extends ConsumerState<GameScreen>
   String? _mobileLogMessage;
   bool _isKeyboardVisible = false;
 
+  // Tile size management for mobile keyboard mode
+  double _mobileTileSize = 35.0;
+  static const double _minMobileTileSize = 20.0;
+  static const double _maxMobileTileSize = 50.0;
+
+  // Grid column count for mobile keyboard mode
+  int _mobileCrossAxisCount = 8;
+  static const int _minMobileCrossAxisCount = 6;
+  static const int _maxMobileCrossAxisCount = 12;
+
   String currentPlayerTurn = '';
   List<Tile> allTiles = [];
   List<Tile> middleTiles = [];
   late int tilesLeftCount;
-
   bool isCurrentUsersTurn = false;
   bool isFlipping = false;
 
@@ -81,6 +90,26 @@ class GameScreenState extends ConsumerState<GameScreen>
     super.initState();
     currentUserId = FirebaseAuth.instance.currentUser?.uid;
     FocusManager.instance.primaryFocus?.unfocus();
+  }
+
+  void _zoomIn() {
+    setState(() {
+      _mobileTileSize =
+          (_mobileTileSize + 5.0).clamp(_minMobileTileSize, _maxMobileTileSize);
+      // Bigger tiles, so fewer columns
+      _mobileCrossAxisCount =
+          (_mobileCrossAxisCount - 1).clamp(_minMobileCrossAxisCount, _maxMobileCrossAxisCount);
+    });
+  }
+
+  void _zoomOut() {
+    setState(() {
+      _mobileTileSize =
+          (_mobileTileSize - 5.0).clamp(_minMobileTileSize, _maxMobileTileSize);
+      // Smaller tiles, so more columns
+      _mobileCrossAxisCount =
+          (_mobileCrossAxisCount + 1).clamp(_minMobileCrossAxisCount, _maxMobileCrossAxisCount);
+    });
   }
 
   void _updateTurnState(bool newTurnState) {
@@ -505,7 +534,9 @@ class GameScreenState extends ConsumerState<GameScreen>
         _previousGameData = Map<String, dynamic>.from(currentGameData);
 
         var screenSize = MediaQuery.of(context).size;
-        final double tileSize = screenSize.width > 600 ? 40 : 35;
+        final double baseTileSize = screenSize.width > 600 ? 40 : 35;
+        final double tileSize =
+            _isKeyboardVisible ? _mobileTileSize : baseTileSize;
         Color getBackgroundColor(Tile tile) {
           // If the tile is part of the currently selected input, use the selecting player's color.
           // Otherwise, use specific colors for 'invalid'/'TBD' or the default purple.
@@ -568,9 +599,16 @@ class GameScreenState extends ConsumerState<GameScreen>
                   child: Scaffold(
                     // Main Scaffold for the GameScreen
                     appBar: AppBar(
-                      // On smaller screens (mobile), hide the back button to save space.
-                      automaticallyImplyLeading:
-                          MediaQuery.of(context).size.width > 600,
+                      leading: (MediaQuery.of(context).size.width < 600 &&
+                              _isKeyboardVisible)
+                          ? IconButton(
+                              icon: const Icon(Icons.remove),
+                              onPressed: _zoomOut,
+                            )
+                          : null,
+                      // On smaller screens (mobile), hide the back button to save space unless keyboard is visible.
+                      automaticallyImplyLeading: (MediaQuery.of(context).size.width > 600) ||
+                          (MediaQuery.of(context).size.width < 600 && !_isKeyboardVisible),
                       title: Row(
                         // Use a Row for flexible layout in the title
                         children: [
@@ -633,7 +671,14 @@ class GameScreenState extends ConsumerState<GameScreen>
                         ],
                       ),
                       // No separate actions needed as they are now part of the title row
-                      actions: [],
+                      actions: [
+                        if (MediaQuery.of(context).size.width < 600 &&
+                            _isKeyboardVisible)
+                          IconButton(
+                            icon: const Icon(Icons.add),
+                            onPressed: _zoomIn,
+                          ),
+                      ],
                     ),
 
                     body: Stack(
@@ -731,7 +776,7 @@ class GameScreenState extends ConsumerState<GameScreen>
                                                   fontWeight: FontWeight.bold,
                                                   color: Colors.white),
                                             ),
-                                            Expanded(
+                                            Flexible(
                                               child: MiddleTilesGridWidget(
                                                 middleTiles: middleTiles,
                                                 newestTileId: newestTileId,
@@ -756,10 +801,9 @@ class GameScreenState extends ConsumerState<GameScreen>
                                                     playerIdToUsernameMap[
                                                             currentPlayerTurn] ??
                                                         'Someone',
-                                                crossAxisCount:
-                                                    constraints.maxWidth > 600
-                                                        ? 12
-                                                        : 8,
+                                                crossAxisCount: _isKeyboardVisible
+                                                    ? _mobileCrossAxisCount
+                                                    : (constraints.maxWidth > 600 ? 12 : 8),
                                               ),
                                             ),
                                           ],
