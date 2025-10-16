@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 import 'package:flutter_frontend/services/overlay_notification_service.dart';
 import 'package:flutter_frontend/widgets/dialogs/update_username_dialog.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -637,184 +638,194 @@ class GameScreenState extends ConsumerState<GameScreen>
 
                     body: Stack(
                       children: [
+                        const SparkleBackground(),
                         LayoutBuilder(// LayoutBuilder for responsive UI
                             builder: (context, constraints) {
                           return Padding(
-                              // Padding for the main content area
-                          padding: const EdgeInsets.all(16.0),
-                          child: Column(
-                            // Main column for game content
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              // Player Words section (remains the same)
-                              Expanded(
-                                flex: 3,
-                                child: ListView.builder(
-                                  itemCount: playerWords.length,
-                                  itemBuilder: (context, index) {
-                                    final playerWordData = playerWords[index];
-                                    final isCurrentPlayerTurn =
-                                        playerWordData['playerId'] ==
-                                            currentPlayerTurn;
-                                    final score = currentGameData['players']
-                                                [playerWordData['playerId']]
-                                            ['score'] ??
-                                        0;
-                                    final maxScoreToWin = currentGameData[
-                                        'max_score_to_win_per_player'] as int;
+                            // Padding for the main content area
+                            padding: const EdgeInsets.all(16.0),
+                            child: Column(
+                              // Main column for game content
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                // Player Words section (remains the same)
+                                Expanded(
+                                  flex: 3,
+                                  child: ListView.builder(
+                                    itemCount: playerWords.length,
+                                    itemBuilder: (context, index) {
+                                      final playerWordData = playerWords[index];
+                                      final isCurrentPlayerTurn =
+                                          playerWordData['playerId'] ==
+                                              currentPlayerTurn;
+                                      final score = currentGameData['players']
+                                                  [playerWordData['playerId']]
+                                              ['score'] ??
+                                          0;
+                                      final maxScoreToWin = currentGameData[
+                                          'max_score_to_win_per_player'] as int;
 
-                                    final playerIndex = index;
-                                    final playerCount = playerWords.length;
-                                    return PlayerWords(
-                                      // Pass the animation flag down if PlayerWords/TileWidget needs to know
-                                      // For now, PlayerWords will receive words already processed,
-                                      // some of which might have 'isAnimatingDestinationPlaceholder'.
-                                      // TileWidget within PlayerWords should handle this flag for opacity.
-                                      // This is handled by the PlayerWords widget internally by checking the word data.
-                                      key: ValueKey(playerWordData['playerId']),
-                                      username: playerWordData['username'],
-                                      selectingPlayerId: currentUserId,
-                                      playerId: playerWordData['playerId'],
-                                      words: playerWordData['words'],
-                                      playerColors: playerColorMap,
-                                      playerIndex: playerIndex,
-                                      playerCount: playerCount,
-                                      // onClickTile: handleTileSelection,
-                                      isKeyboardMode: _isKeyboardVisible,
-                                      onClickTile: _isKeyboardVisible
-                                          ? (tile, isSelected) {}
-                                          : gameController.handleTileSelection,
-                                      officiallySelectedTileIds:
-                                          gameControllerState
-                                              .officiallySelectedTileIds,
-                                      potentiallySelectedTileIds:
-                                          gameControllerState
-                                              .potentiallySelectedTileIds,
-                                      onClearSelection:
-                                          gameController.clearInput,
-                                      allTiles: allTiles,
-                                      tileGlobalKeys: tileGlobalKeys,
-                                      tileSize: tileSize,
-                                      isCurrentPlayerTurn: isCurrentPlayerTurn,
-                                      score: score,
-                                      maxScoreToWin: maxScoreToWin,
-                                    );
-                                  },
-                                ),
-                              ),
-
-                              const SizedBox(height: 10),
-
-                              // Tiles & Game Log Row
-                              Expanded(
-                                flex: 1,
-                                child: Row(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Expanded(
-                                      flex: 2,
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          const SizedBox(height: 5),
-                                          Text(
-                                            'Tiles ($tilesLeftCount Left):',
-                                            style: TextStyle(
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                                color: Colors.white),
-                                          ),
-                                          Expanded(
-                                            child: MiddleTilesGridWidget(
-                                              middleTiles: middleTiles,
-                                              newestTileId: newestTileId,
-                                              officiallySelectedTileIds:
-                                                  gameControllerState
-                                                      .officiallySelectedTileIds,
-                                              potentiallySelectedTileIds:
-                                                  gameControllerState
-                                                      .potentiallySelectedTileIds,
-                                              tileGlobalKeys: tileGlobalKeys,
-                                              tileSize: tileSize,
-                                              onTileSelected: _isKeyboardVisible
-                                                  ? (tile, isSelected) {}
-                                                  : gameController.handleTileSelection as void Function(Tile, bool),
-                                              playerColors: playerColorMap,
-                                              selectingPlayerId: currentUserId,
-                                              currentPlayerTurnUsername:
-                                                  playerIdToUsernameMap[
-                                                          currentPlayerTurn] ??
-                                                      'Someone',
-                                              crossAxisCount:
-                                                  constraints.maxWidth > 600
-                                                      ? 12
-                                                      : 8,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                    if (MediaQuery.of(context).size.width <
-                                            600 &&
-                                        _mobileLogMessage != null)
-                                      Expanded(
-                                        flex: 1,
-                                        child: MobileGameLogOverlay(
-                                          message: _mobileLogMessage!,
-                                          onComplete: () {
-                                            if (mounted) {
-                                              setState(() {
-                                                _mobileLogMessage = null;
-                                              });
-                                            }
-                                          },
-                                          playerColors: playerColorMap,
-                                          playerIdToUsernameMap:
-                                              playerIdToUsernameMap,
-                                        ),
-                                      ),
-                                    if (constraints.maxWidth > 600)
-                                      Expanded(
-                                        flex: 1,
-                                        child: GameLog(
-                                            gameId: widget.gameId,
-                                            gameData: currentGameData,
-                                            playerIdToUsernameMap:
-                                                playerIdToUsernameMap,
-                                            tileSize: tileSize,
-                                            playerColors: playerColorMap),
-                                      ),
-                                  ],
-                                ),
-                              ),
-                              const SizedBox(height: 10),
-
-                              Text(
-                                "Selected Tiles:",
-                                style: TextStyle(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white),
-                              ),
-                              Expanded(
-                                flex: 1,
-                                child: Align(
-                                  alignment: Alignment.topLeft,
-                                  child: SelectedTilesDisplay(
-                                    inputtedLetters:
-                                        gameControllerState.inputtedLetters,
-                                    tileSize: tileSize,
-                                    getTileBackgroundColor: getBackgroundColor,
-                                    onRemoveTile: () {
-                                      gameController.handleBackspace();
+                                      final playerIndex = index;
+                                      final playerCount = playerWords.length;
+                                      return PlayerWords(
+                                        // Pass the animation flag down if PlayerWords/TileWidget needs to know
+                                        // For now, PlayerWords will receive words already processed,
+                                        // some of which might have 'isAnimatingDestinationPlaceholder'.
+                                        // TileWidget within PlayerWords should handle this flag for opacity.
+                                        // This is handled by the PlayerWords widget internally by checking the word data.
+                                        key: ValueKey(
+                                            playerWordData['playerId']),
+                                        username: playerWordData['username'],
+                                        selectingPlayerId: currentUserId,
+                                        playerId: playerWordData['playerId'],
+                                        words: playerWordData['words'],
+                                        playerColors: playerColorMap,
+                                        playerIndex: playerIndex,
+                                        playerCount: playerCount,
+                                        // onClickTile: handleTileSelection,
+                                        isKeyboardMode: _isKeyboardVisible,
+                                        onClickTile: _isKeyboardVisible
+                                            ? (tile, isSelected) {}
+                                            : gameController
+                                                .handleTileSelection,
+                                        officiallySelectedTileIds:
+                                            gameControllerState
+                                                .officiallySelectedTileIds,
+                                        potentiallySelectedTileIds:
+                                            gameControllerState
+                                                .potentiallySelectedTileIds,
+                                        onClearSelection:
+                                            gameController.clearInput,
+                                        allTiles: allTiles,
+                                        tileGlobalKeys: tileGlobalKeys,
+                                        tileSize: tileSize,
+                                        isCurrentPlayerTurn:
+                                            isCurrentPlayerTurn,
+                                        score: score,
+                                        maxScoreToWin: maxScoreToWin,
+                                      );
                                     },
                                   ),
                                 ),
-                              ),
-                            ],
-                          ),
-                        );
+
+                                const SizedBox(height: 10),
+
+                                // Tiles & Game Log Row
+                                Expanded(
+                                  flex: 1,
+                                  child: Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Expanded(
+                                        flex: 2,
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.start,
+                                          children: [
+                                            const SizedBox(height: 5),
+                                            Text(
+                                              'Tiles ($tilesLeftCount Left):',
+                                              style: TextStyle(
+                                                  fontSize: 18,
+                                                  fontWeight: FontWeight.bold,
+                                                  color: Colors.white),
+                                            ),
+                                            Expanded(
+                                              child: MiddleTilesGridWidget(
+                                                middleTiles: middleTiles,
+                                                newestTileId: newestTileId,
+                                                officiallySelectedTileIds:
+                                                    gameControllerState
+                                                        .officiallySelectedTileIds,
+                                                potentiallySelectedTileIds:
+                                                    gameControllerState
+                                                        .potentiallySelectedTileIds,
+                                                tileGlobalKeys: tileGlobalKeys,
+                                                tileSize: tileSize,
+                                                onTileSelected: _isKeyboardVisible
+                                                    ? (tile, isSelected) {}
+                                                    : gameController
+                                                            .handleTileSelection
+                                                        as void Function(
+                                                            Tile, bool),
+                                                playerColors: playerColorMap,
+                                                selectingPlayerId:
+                                                    currentUserId,
+                                                currentPlayerTurnUsername:
+                                                    playerIdToUsernameMap[
+                                                            currentPlayerTurn] ??
+                                                        'Someone',
+                                                crossAxisCount:
+                                                    constraints.maxWidth > 600
+                                                        ? 12
+                                                        : 8,
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                      if (MediaQuery.of(context).size.width <
+                                              600 &&
+                                          _mobileLogMessage != null)
+                                        Expanded(
+                                          flex: 1,
+                                          child: MobileGameLogOverlay(
+                                            message: _mobileLogMessage!,
+                                            onComplete: () {
+                                              if (mounted) {
+                                                setState(() {
+                                                  _mobileLogMessage = null;
+                                                });
+                                              }
+                                            },
+                                            playerColors: playerColorMap,
+                                            playerIdToUsernameMap:
+                                                playerIdToUsernameMap,
+                                          ),
+                                        ),
+                                      if (constraints.maxWidth > 600)
+                                        Expanded(
+                                          flex: 1,
+                                          child: GameLog(
+                                              gameId: widget.gameId,
+                                              gameData: currentGameData,
+                                              playerIdToUsernameMap:
+                                                  playerIdToUsernameMap,
+                                              tileSize: tileSize,
+                                              playerColors: playerColorMap),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+
+                                Text(
+                                  "Selected Tiles:",
+                                  style: TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white),
+                                ),
+                                Expanded(
+                                  flex: 1,
+                                  child: Align(
+                                    alignment: Alignment.topLeft,
+                                    child: SelectedTilesDisplay(
+                                      inputtedLetters:
+                                          gameControllerState.inputtedLetters,
+                                      tileSize: tileSize,
+                                      getTileBackgroundColor:
+                                          getBackgroundColor,
+                                      onRemoveTile: () {
+                                        gameController.handleBackspace();
+                                      },
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
                         }),
                       ],
                     ),
@@ -822,7 +833,9 @@ class GameScreenState extends ConsumerState<GameScreen>
                     // This is the FAB for actions like flipping a new tile, clearing input, etc.
 
                     floatingActionButton:
-                        MediaQuery.of(context).size.width > 600 || (MediaQuery.of(context).size.width < 600 && !_isKeyboardVisible)
+                        MediaQuery.of(context).size.width > 600 ||
+                                (MediaQuery.of(context).size.width < 600 &&
+                                    !_isKeyboardVisible)
                             ? GameActionsFab(
                                 isFlipping: isFlipping,
                                 isCurrentUsersTurn: isCurrentUsersTurn,
@@ -1126,5 +1139,128 @@ class GameScreenState extends ConsumerState<GameScreen>
       // from the state *before* this rebuild, which is what the animation needs for start positions.
       setState(() {});
     }
+  }
+}
+
+class Sparkle {
+  late Offset position;
+  late double size;
+  late double phase;
+  late Color color;
+
+  Sparkle(Size area) {
+    final random = Random();
+    position = Offset(
+        random.nextDouble() * area.width, random.nextDouble() * area.height);
+    size = random.nextDouble() * 2.0 + 1.0; // Sparkle size between 1.0 and 3.0
+    phase =
+        random.nextDouble() * 2 * pi; // Random phase for unique animation cycle
+    color = Color.fromARGB(
+      255,
+      200 + random.nextInt(56), // Whiter shades
+      200 + random.nextInt(56),
+      200 + random.nextInt(56),
+    );
+  }
+}
+
+class SparkleBackground extends StatefulWidget {
+  const SparkleBackground({super.key});
+
+  @override
+  _SparkleBackgroundState createState() => _SparkleBackgroundState();
+}
+
+class _SparkleBackgroundState extends State<SparkleBackground>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  List<Sparkle> _sparkles = [];
+  static const int _numberOfSparkles = 100;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 10),
+    )..repeat();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Initialize sparkles once we have the screen size
+    if (_sparkles.isEmpty) {
+      final size = MediaQuery.of(context).size;
+      _sparkles = List.generate(_numberOfSparkles, (_) => Sparkle(size));
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) {
+        return CustomPaint(
+          painter: SparklePainter(_controller.value, _sparkles),
+          child: Container(),
+        );
+      },
+    );
+  }
+}
+
+class SparklePainter extends CustomPainter {
+  final double animationValue;
+  final List<Sparkle> sparkles;
+
+  SparklePainter(this.animationValue, this.sparkles);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    // Draw a dark gradient background
+    final paint = Paint()
+      ..shader = const RadialGradient(
+        center: Alignment.center,
+        radius: 1.0,
+        colors: [Color(0xFF2c003e), Color(0xFF1a0025)],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
+
+    // Draw each sparkle
+    for (final sparkle in sparkles) {
+      // Calculate opacity based on a sine wave to create a shimmer effect
+      final wave = sin(animationValue * 2 * pi + sparkle.phase);
+      final opacity = (wave + 1) / 2; // Normalize to 0.0 - 1.0
+
+      final sparklePaint = Paint()
+        ..color = sparkle.color.withOpacity(opacity * 0.7);
+
+      // Draw a 4-pointed star for a "diamondy" look
+      final path = Path();
+      path.moveTo(
+          sparkle.position.dx, sparkle.position.dy - sparkle.size); // Top
+      path.lineTo(
+          sparkle.position.dx + sparkle.size, sparkle.position.dy); // Right
+      path.lineTo(
+          sparkle.position.dx, sparkle.position.dy + sparkle.size); // Bottom
+      path.lineTo(
+          sparkle.position.dx - sparkle.size, sparkle.position.dy); // Left
+      path.close();
+
+      canvas.drawPath(path, sparklePaint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant SparklePainter oldDelegate) {
+    // Repaint whenever the animation value changes
+    return animationValue != oldDelegate.animationValue;
   }
 }
