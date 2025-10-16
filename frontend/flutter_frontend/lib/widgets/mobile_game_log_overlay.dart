@@ -7,6 +7,7 @@ class MobileGameLogOverlay extends StatefulWidget {
   final String? playerId; // The ID of the player associated with the log
   final Map<String, Color> playerColors; // Map of player IDs to colors
   final Map<String, String> playerIdToUsernameMap; // Map of player IDs to usernames
+  final bool isError; // To indicate if the message is an error
 
   const MobileGameLogOverlay({
     Key? key,
@@ -15,6 +16,7 @@ class MobileGameLogOverlay extends StatefulWidget {
     this.playerId,
     required this.playerColors,
     required this.playerIdToUsernameMap,
+    this.isError = false, // Default to false
   }) : super(key: key);
 
   @override
@@ -61,7 +63,9 @@ class _MobileGameLogOverlayState extends State<MobileGameLogOverlay>
           margin: const EdgeInsets.all(8.0),
           padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 8.0),
           decoration: BoxDecoration(
-            color: Colors.black.withOpacity(0.85), // Slightly darker for contrast
+            color: widget.isError
+                ? Colors.red.withOpacity(0.85)
+                : Colors.black.withOpacity(0.85), // Use red for errors
             borderRadius: BorderRadius.circular(8.0),
           ),
           child: Row(
