@@ -9,6 +9,7 @@ class AnimatedTileWidget extends StatefulWidget {
   final bool isSelected;
   final Color selectingPlayerColor;
   final GlobalKey? globalKey;
+  final bool isKeyboardMode;
 
   const AnimatedTileWidget({
     Key? key,
@@ -17,6 +18,7 @@ class AnimatedTileWidget extends StatefulWidget {
     required this.onClickTile,
     required this.isSelected,
     required this.selectingPlayerColor,
+    this.isKeyboardMode = false,
     this.globalKey,
   }) : super(key: key);
 
@@ -56,7 +58,10 @@ class _AnimatedTileWidgetState extends State<AnimatedTileWidget>
 
   @override
   Widget build(BuildContext context) {
-    final Color tileColor = widget.isSelected ? widget.selectingPlayerColor : _colorAnimation.value ?? _endColor;
+    final Color tileColor = widget.isKeyboardMode
+        ? (widget.isSelected ? widget.selectingPlayerColor : _endColor)
+        : (widget.isSelected ? widget.selectingPlayerColor : _colorAnimation.value ?? _endColor);
+
     
     return TileWidget(
       key: ValueKey(widget.tile.tileId),
@@ -66,6 +71,7 @@ class _AnimatedTileWidgetState extends State<AnimatedTileWidget>
       onClickTile: widget.onClickTile,
       isSelected: widget.isSelected,
       backgroundColor: tileColor,
+      isKeyboardMode: widget.isKeyboardMode,
     );
   }
 }

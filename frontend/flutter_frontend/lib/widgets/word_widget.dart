@@ -14,6 +14,7 @@ class WordCard extends StatefulWidget {
   final double tileSize;
   final Map<String, GlobalKey> tileGlobalKeys;
   final String? selectingPlayerId;
+  final bool isKeyboardMode;
 
   const WordCard({
     Key? key,
@@ -28,6 +29,7 @@ class WordCard extends StatefulWidget {
     required this.tileSize,
     required this.tileGlobalKeys,
     this.selectingPlayerId,
+    this.isKeyboardMode = false,
   }) : super(key: key);
 
   @override
@@ -48,7 +50,25 @@ class _WordCardState extends State<WordCard> {
   @override
   Widget build(BuildContext context) {
     final ownerColor =
-        widget.playerColors[widget.currentOwnerUserId] ?? Colors.grey;
+        widget.playerColors[widget.currentOwnerUserId] ?? Colors.white;
+
+    if (widget.isKeyboardMode) {
+      final wordString = widget.tiles.map((t) => t.letter ?? '').join('');
+      return Padding(
+        // Padding to separate words from each other
+        padding: const EdgeInsets.symmetric(horizontal: 4.0, vertical: 2.0),
+        child: Text(
+          wordString,
+          style: TextStyle(
+            color: ownerColor,
+            // Match the font size from the original TileWidget for consistency
+            fontSize: widget.tileSize * 0.5,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+    }
+
     return GestureDetector(
       onTap: () {
         _selectAllTiles();
@@ -102,6 +122,7 @@ class _WordCardState extends State<WordCard> {
                               : isHighlighted
                                   ? tileColor.withOpacity(0.25)
                                   : tileColor,
+                          isKeyboardMode: widget.isKeyboardMode,
                         ),
                       );
                     }).toList(),

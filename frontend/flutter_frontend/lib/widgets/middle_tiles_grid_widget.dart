@@ -15,6 +15,7 @@ class MiddleTilesGridWidget extends StatelessWidget {
   final Map<String, Color> playerColors;
   final String? selectingPlayerId;
   final String? newestTileId;
+  final bool isKeyboardMode;
 
   const MiddleTilesGridWidget({
     Key? key,
@@ -29,6 +30,7 @@ class MiddleTilesGridWidget extends StatelessWidget {
     required this.playerColors,
     this.selectingPlayerId,
     this.newestTileId,
+    this.isKeyboardMode = false,
   }) : super(key: key);
 
   @override
@@ -59,6 +61,7 @@ class MiddleTilesGridWidget extends StatelessWidget {
             onClickTile: onTileSelected,
             isSelected: isSelected,
             selectingPlayerColor: selectingPlayerColor,
+            isKeyboardMode: isKeyboardMode,
           );
         }
 
@@ -70,6 +73,7 @@ class MiddleTilesGridWidget extends StatelessWidget {
           onClickTile: onTileSelected,
           isSelected: isSelected,
           backgroundColor: isSelected ? selectingPlayerColor : tileColor,
+          isKeyboardMode: isKeyboardMode,
         );
       },
     );

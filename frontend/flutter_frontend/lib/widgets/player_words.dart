@@ -21,6 +21,7 @@ class PlayerWords extends StatelessWidget {
   final int score;
   final int maxScoreToWin;
   final String? selectingPlayerId;
+  final bool isKeyboardMode;
 
   const PlayerWords({
     required this.playerIndex,
@@ -41,6 +42,7 @@ class PlayerWords extends StatelessWidget {
     required this.score,
     required this.maxScoreToWin,
     this.selectingPlayerId,
+    this.isKeyboardMode = false,
   }) : super(key: key);
 
   @override
@@ -86,6 +88,7 @@ class PlayerWords extends StatelessWidget {
                 onClearSelection: onClearSelection,
                 tileSize: tileSize,
                 tileGlobalKeys: tileGlobalKeys,
+                isKeyboardMode: isKeyboardMode,
               )),
             );
           }).toList(),

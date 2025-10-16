@@ -7,6 +7,7 @@ class SelectedLetterTile extends StatefulWidget {
   final Color textColor;
   final Color backgroundColor;
   final double tileSize;
+  final bool isKeyboardMode;
 
   const SelectedLetterTile({
     Key? key,
@@ -15,6 +16,7 @@ class SelectedLetterTile extends StatefulWidget {
     required this.tileSize,
     this.textColor = Colors.white,
     this.backgroundColor = const Color(0xFF4A148C),
+    this.isKeyboardMode = false,
   }) : super(key: key);
 
   @override
@@ -24,6 +26,24 @@ class SelectedLetterTile extends StatefulWidget {
 class _TileWidgetState extends State<SelectedLetterTile> {
   @override
   Widget build(BuildContext context) {
+    if (widget.isKeyboardMode) {
+      return SizedBox(
+        width: widget.tileSize,
+        height: widget.tileSize,
+        child: Center(
+          child: Text(
+            widget.tile.letter ?? '',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: widget.tileSize * 0.5,
+              color: Colors.white.withOpacity(0.7), // Dimmed text
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      );
+    }
+
     return Stack(
       children: [
         Container(
